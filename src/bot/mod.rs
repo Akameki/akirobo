@@ -2,3 +2,4 @@
 // pub mod utils;
 // pub mod movement;
 pub mod bot;
+pub mod matrix;

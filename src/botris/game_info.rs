@@ -1,6 +1,6 @@
-pub const BOARD_WIDTH: u16 = 10;
-pub const BOARD_HIGHT: u16 = 21;
-pub const GARBAGE_MESSINESS: f32 = 0.05;
+pub const BOARD_WIDTH: usize = 10;
+pub const BOARD_HEIGHT: usize = 25;
+// pub const GARBAGE_MESSINESS: f32 = 0.05;
 pub const ATTACK_TABLE: [(&'static str, usize); 9] = 
 [
     ("single", 0),
