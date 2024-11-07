@@ -1,4 +1,4 @@
-use crate::utils::{
+use crate::botris::{
     types::{Board, PieceData},
     game_info::{BOARD_WIDTH, BOARD_HIGHT},
 };

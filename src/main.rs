@@ -1,4 +1,4 @@
-pub mod utils;
+pub mod botris;
 pub mod bot;
 
 use std::io::Write;
@@ -8,8 +8,8 @@ use crossterm::{
     terminal::{self, ClearType::*}, ExecutableCommand,
 };
 
-use utils::websocket::BotrisWebSocket;
-use utils::event_types::BotrisMsg;
+use botris::websocket::BotrisWebSocket;
+use botris::api_messages::BotrisMsg;
 use bot::bot::Bot;
 
 #[tokio::main]
@@ -22,15 +22,11 @@ async fn main() {
 
     let mut stdout = std::io::stdout();
 
-    queue!(stdout,
-        terminal::Clear(All),
-        cursor::MoveTo(0,0),
-        cursor::Hide,
-        PrintStyledContent("\n\nAkirobo\n\n".blue().bold()),
-    ).unwrap();
+    queue!(stdout, terminal::Clear(All), cursor::MoveTo(0,0), cursor::Hide, PrintStyledContent("\n\nAkirobo\n\n".blue().bold()),).unwrap();
     stdout.flush().unwrap();
     
     let mut ws = BotrisWebSocket::new().await;
+    let mut session_id = String::new();
 
     queue!(stdout,
         cursor::MoveToNextLine(3),
@@ -43,31 +39,31 @@ async fn main() {
         if let Some(message) = ws.read().await {
             match message {
                 BotrisMsg::RequestMove(payload) => {
-                    let actions = bot.request_moves(&payload).await;
+                    let actions=bot.request_moves(&payload).await;
                     ws.send_actions(actions).await;
                 },
-                // BotrisMsg::GameReset { payload: _ } => {
-                //     println!("Game Reset!");
-                //     bot = Bot::new();
-                // }
-                // BotrisMsg::RoundOver { payload: _ } => {
-                //     println!("Round Over!");
-                //     bot = Bot::new();
-                // }
-                // BotrisMsg::GameOver { payload: _ } => {
-                //     println!("Game Over!");
-                //     bot = Bot::new();
-                // }
                 BotrisMsg::PlayerAction(payload) => {
-                    // println!("received player action");
+                    // println!("> {} {}","PlayerAction",payload);
+                    // println!("PlayerAction");
                 },
-                BotrisMsg::Error(payload) => {
-                    println!("> {} {}", "Error", payload);
+                BotrisMsg::Error(payload) => println!("> {} {}", "BotrisError", payload),
+                BotrisMsg::RoomData(_) => (),
+                BotrisMsg::Authenticated(payload) => {
+                    session_id = payload.session_id;
+                    println!("Authenticated with SId: {}", session_id);
                 },
-                _ => {
-                    // println!("> {:#?}", message);
-                    println!("> {:?}", message);
-                }
+                BotrisMsg::PlayerJoined(_) => (),
+                BotrisMsg::PlayerLeft(_) => (),
+                BotrisMsg::PlayerBanned(_) => (),
+                BotrisMsg::PlayerUnbanned(_) => (),
+                BotrisMsg::SettingsChanged(_) => (),
+                BotrisMsg::GameStarted => println!("Game Started"),
+                BotrisMsg::RoundStarted(_) => println!("Round Started"),
+                BotrisMsg::Action(action_payload) => panic!("uhhh"),
+                BotrisMsg::PlayerDamageReceived(player_damage_received_payload) => (),
+                BotrisMsg::RoundOver(end_payload) => println!("Round Over"),
+                BotrisMsg::GameOver(end_payload) => println!("Game Over"),
+                BotrisMsg::GameReset(room_data_payload) => println!("Game Reset"),
             }
         }
     }

@@ -6,7 +6,7 @@ use futures_util::{stream::{SplitSink, SplitStream}, SinkExt, StreamExt};
 use serde_json::{from_str, json};
 use crossterm::style::Stylize;
 
-use crate::utils::event_types::{BotrisMsg, RequestMovePayload, ActionPayload};
+use crate::botris::api_messages::{BotrisMsg, RequestMovePayload, ActionPayload};
 
 /// Prints errors in the format of
 /// Error: Description
@@ -52,7 +52,7 @@ impl BotrisWebSocket {
 
         println!("Connecting to {}", url);
         let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
-        println!("{}", "Connected!!! :3".green().bold());
+        println!("{}", "Connected".green().bold());
         let (write, read) = ws_stream.split();
         BotrisWebSocket { read, write }
     }

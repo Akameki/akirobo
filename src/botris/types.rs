@@ -1,9 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
 
-use super::piece::*;
-
-
 
 
 pub type SessionId = String;
@@ -71,6 +68,19 @@ pub struct BotInfo {
 	pub developers: Vec<Developer>,
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone, Copy)]
+pub enum Piece {
+    I, O, J, L, S, Z, T
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+
+// may or may not work
+pub enum Block {
+    I, O, J, L, S, Z, T, G, Null
+}
+
+
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PieceData {
@@ -104,8 +114,6 @@ pub struct GameState {
     pub dead: bool,
 }
 
-/// Represents the type of command to be sent to the 
-/// server and what move you want the piece to make
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Command {

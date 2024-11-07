@@ -1,10 +1,11 @@
-use crate::utils::event_types::{ActionPayload, RequestMovePayload};
+use crate::botris::api_messages::{ActionPayload, RequestMovePayload};
 
 pub trait BotTrait {
     fn request_moves(event: &RequestMovePayload) -> ActionPayload;
 }
 
 pub struct Bot {
+    board: [[bool; 10]; 20],
     bag: u32,
     piece: u32,
 }
@@ -16,6 +17,7 @@ impl Bot {
 
     pub fn default() -> Self {
         Bot {
+            board: [[false; 10]; 20],
             bag: 0,
             piece: 0,
         }
