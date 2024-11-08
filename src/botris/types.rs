@@ -174,20 +174,6 @@ pub struct DamageTankedType {
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ClearType {
-    pub clear_name: ClearName,
-    pub all_spin: bool,
-    pub b2b: bool,
-    pub combo: Number,
-    pub pc: bool,
-    pub attack: Number,
-    pub cancelled: Number,
-    pub piece: PieceData,
-    pub cleared_lines: Vec<ClearedLines>
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct ClearedLines {
     pub height: Number,
     pub blocks: Vec<Block>
