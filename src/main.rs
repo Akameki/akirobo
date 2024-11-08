@@ -1,5 +1,6 @@
 pub mod botris;
 pub mod bot;
+pub mod game;
 
 use std::io::Write;
 

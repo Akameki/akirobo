@@ -74,6 +74,8 @@ pub struct RequestMovePayload {
 
 /// Represents a collection of moves to be sent to the server for the
 /// current piece
+// pub type ActionPayload = Vec<Command>;
+
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ActionPayload {
@@ -81,8 +83,11 @@ pub struct ActionPayload {
 }
 
 impl ActionPayload {
-    pub fn new() -> ActionPayload {
+    pub fn empty() -> ActionPayload {
         ActionPayload { commands: Vec::new() }
+    }
+    pub fn new(commands: Vec<Command>) -> ActionPayload {
+        ActionPayload { commands }
     }
 
     /// Adds a new command to the end of the vector

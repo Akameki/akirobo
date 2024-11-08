@@ -107,14 +107,14 @@ pub struct GameState {
     pub held: Option<Piece>,
     pub current: PieceData,
     pub can_hold: bool,
-    pub combo: Number,
+    pub combo: u32,
     pub b2b: bool,
-    pub score: Number,
-    pub pieces_placed: Number,
+    // pub score: Number,
+    pub pieces_placed: u32,
     pub dead: bool,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Command {
     Hold,
