@@ -1,4 +1,4 @@
-//! Assigning a score to a game state.
+//! Wraps a Frame with an evaluation
 
 use std::{cmp, vec};
 
@@ -6,17 +6,21 @@ use crate::botris::game_info::BOARD_HEIGHT;
 
 use crate::game::frame::Frame;
 
+#[derive(Debug, Clone)]
 pub struct Evaluator {
+    pub frame: Frame,
+    pub score: f64,
+    
     heights: [i32; 10],
-    frame: Frame,
     verbose: bool,
 }
 
 impl Evaluator {
     pub fn new(frame: Frame) -> Self {
         Evaluator {
-            heights: [0; 10],
             frame,
+            heights: [0; 10],
+            score: f64::NAN,
             verbose: false,
         }
     }
@@ -28,8 +32,8 @@ impl Evaluator {
         let mut total_score = 0.0;
 
         let eval_fns: Vec<(fn(&Evaluator) -> f64, f64, &str)> = vec![
-            (Self::future_attack, 1.0, "attack"),
-            (Self::max_height, 0.5, "max_height"),
+            (Self::attacks, 2.0, "attack"),
+            (Self::max_height, 1.0, "max_height"),
             (Self::individual_holes, 0.3, "total_holes"),
             (Self::holes, 3.0, "hole_clusters"),
             (Self::bumpiness, 0.5, "bumpiness"),
@@ -46,6 +50,7 @@ impl Evaluator {
         if verbose {
             println!("Total score: {}", total_score);
         }
+        self.score = total_score;
         total_score
     }
 
@@ -63,12 +68,31 @@ impl Evaluator {
 
     // Various evalutaions below
 
-    fn future_attack(&self) -> f64 {
-        self.frame.future_attack as f64
+    fn attacks(&self) -> f64 {
+        let mut score = 0.0;
+        score += self.frame.future_attack as f64;
+        score += if self.frame.b2b { 1 } else { 0 } as f64;
+        score
     }
 
     fn max_height(&self) -> f64 {
-        0.0 - *self.heights.iter().max().unwrap() as f64
+        match self.heights.iter().max().unwrap() {
+            0 => 0.0,
+            1..=4 => -4.0,
+            5|6 => -5.0,
+            7|8 => -6.0,
+            9|10 => -7.0,
+            11 => -8.0,
+            12 => -10.0,
+            13 => -12.0,
+            14 => -14.0,
+            15 => -16.0,
+            16 => -17.0,
+            17 => -20.0,
+            18 => -25.0,
+            19 => -30.0,
+            _ => -50.0,
+        }
     }
 
     fn individual_holes(&self) -> f64 {
@@ -133,8 +157,8 @@ impl Evaluator {
             wells[i] = well;
 
         }
-        for well in wells.iter() {
-            // highest_well = cmp::max(highest_well, *well);
+        for well in wells {
+            highest_well = cmp::max(highest_well, well);
             match well {
                 0 => score -= 0,
                 1 => score -= 0,

@@ -5,6 +5,7 @@
 //! Also includes methods to run commands and display the frame
 
 use crate::botris::game_info::BOARD_HEIGHT;
+use crate::botris::game_info::COMBO_TABLE;
 use crate::botris::types::ClearName::*;
 use crate::botris::types::Command;
 use crate::botris::types::Command::*;
@@ -14,7 +15,7 @@ use crate::botris::types::Piece;
 use super::piece::*;
 use super::matrix::*;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Eq, Hash)]
 pub struct Frame {
     pub matrix: Matrix,
     // pub bag: Vec<Piece>,
@@ -28,14 +29,13 @@ pub struct Frame {
 
     // pub dropped: bool, // only allow evaluating when the piece has been dropped
     pub depth: usize,
-    // pub first_action: Option<Vec<Command>>,
 }
 
-// impl PartialEq for Frame {
-//     fn eq(&self, other: &Self) -> bool {
-//         self.matrix == other.matrix && self.held == other.held && self.depth == other.depth
-//     }
-// }
+impl PartialEq for Frame {
+    fn eq(&self, other: &Self) -> bool {
+        self.depth == other.depth && self.matrix == other.matrix && self.held == other.held
+    }
+}
 
 impl Frame {
     pub fn from_state(game_state: &GameState) -> Self {
@@ -79,6 +79,15 @@ impl Frame {
                     tentative_piece.y -= 1;
                 }
                 tentative_piece.y += 1;
+            },
+            Hold => {
+                // Assume always start game with held piece // todo
+                if !self.can_hold || self.held.unwrap() == self.current.piece {
+                    return None;
+                }
+                let held_piece = self.held.unwrap();
+                tentative_piece = CurrentPiece::new(held_piece);
+                return Some(Frame { held: Some(self.current.piece), current: tentative_piece, can_hold: false, ..self.clone() });
             },
             _ => panic!()
         }
@@ -142,7 +151,14 @@ impl Frame {
             4 => Quad.attack(),
             _ => panic!(),
         };
+        // add combo
+        future_attack += COMBO_TABLE[self.combo as usize] as u32;
+
         future_attack += self.b2b as u32;
+        // lazy pc check
+        if new_matrix[0..3].iter().all(|row| row.iter().all(|&x| !x)) {
+            future_attack += 10;
+        }
 
         Frame {
             matrix: new_matrix,
@@ -150,8 +166,8 @@ impl Frame {
             held: self.held,
             current: CurrentPiece::new(self.queue[0]),
             can_hold: true,
-            combo: 0, // todo
-            b2b: cleared == 4,  // todo
+            combo: if cleared > 0 { self.combo + 1 } else { 0 },
+            b2b: cleared == 4 || (cleared == 0 && self.b2b), // quad, or no clear with previous b2b
             future_attack,
             // dropped: true,
             depth: self.depth + 1,
