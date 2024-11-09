@@ -34,13 +34,14 @@ async fn main() {
         cursor::SavePosition
     ).unwrap();
 
-    let mut bot = Bot::new();
-
+    
     loop {
         if let Some(message) = ws.read().await {
             match message {
                 BotrisMsg::RequestMove(payload) => {
-                    let actions=bot.suggest_action(&payload.game_state).await;
+                    println!("\n◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆\n");
+                    let mut bot = Bot::new();
+                    let actions = bot.suggest_action(&payload.game_state).await;
                     ws.send_actions(actions).await;
                 },
                 BotrisMsg::PlayerAction(payload) => {

@@ -26,8 +26,16 @@ pub struct Frame {
     pub b2b: bool,
     pub future_attack: u32,
 
-    pub dropped: bool, // only allow evaluating when the piece has been dropped
+    // pub dropped: bool, // only allow evaluating when the piece has been dropped
+    pub depth: usize,
+    // pub first_action: Option<Vec<Command>>,
 }
+
+// impl PartialEq for Frame {
+//     fn eq(&self, other: &Self) -> bool {
+//         self.matrix == other.matrix && self.held == other.held && self.depth == other.depth
+//     }
+// }
 
 impl Frame {
     pub fn from_state(game_state: &GameState) -> Self {
@@ -41,7 +49,9 @@ impl Frame {
             combo: game_state.combo,
             b2b: game_state.b2b,
             future_attack: 0,
-            dropped: false,
+            // dropped: false,
+            depth: 0,
+            // first_action: None,
         }
     }
 
@@ -74,9 +84,10 @@ impl Frame {
         }
 
         if self.collides(&tentative_piece) || tentative_piece == self.current {
-            if tentative_piece == self.current {
-                println!("tentative piece is the same as current piece");
-            }
+            // if tentative_piece == self.current {
+            //     println!("Command {} didn't do anything", command);
+                
+            // }
             None
         } else {
             Some(Frame{ current: tentative_piece, ..self.clone() })
@@ -135,28 +146,30 @@ impl Frame {
 
         Frame {
             matrix: new_matrix,
-            queue: self.queue.clone(),
+            queue: self.queue[1..].to_vec(),
             held: self.held,
-            current: tentative_piece,
+            current: CurrentPiece::new(self.queue[0]),
             can_hold: true,
             combo: 0, // todo
             b2b: cleared == 4,  // todo
             future_attack,
-            dropped: true,
+            // dropped: true,
+            depth: self.depth + 1,
+            // first_action: self.first_action.clone(),
         }
     }
 
-    // move onto the next piece (only when dropped)
-    pub fn advance(&self) -> Frame {
-        if !self.dropped {
-            panic!("Cannot advance without dropping the piece");
-        }
-        let mut new_frame = self.clone();
-        new_frame.dropped = false;
-        new_frame.current = CurrentPiece::new(new_frame.queue[0]);
-        new_frame.queue = new_frame.queue[1..].to_vec();
-        new_frame
-    }
+    // // move onto the next piece (only when dropped)
+    // pub fn advance(&self) -> Frame {
+    //     if !self.dropped {
+    //         panic!("Cannot advance without dropping the piece");
+    //     }
+    //     let mut new_frame = self.clone();
+    //     new_frame.dropped = false;
+    //     new_frame.current = CurrentPiece::new(new_frame.queue[0]);
+    //     new_frame.queue = new_frame.queue[1..].to_vec();
+    //     new_frame
+    // }
 
 
     pub fn display(&self) {
