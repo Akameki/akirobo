@@ -40,7 +40,7 @@ async fn main() {
         if let Some(message) = ws.read().await {
             match message {
                 BotrisMsg::RequestMove(payload) => {
-                    let actions=bot.request_moves(&payload.game_state).await;
+                    let actions=bot.suggest_action(&payload.game_state).await;
                     ws.send_actions(actions).await;
                 },
                 BotrisMsg::PlayerAction(payload) => {

@@ -4,11 +4,12 @@ use std::{cmp, vec};
 
 use crate::botris::game_info::BOARD_HEIGHT;
 
-use super::{frame::Frame, matrix::Matrix};
+use crate::game::frame::Frame;
 
 pub struct Evaluator {
     heights: [i32; 10],
     frame: Frame,
+    verbose: bool,
 }
 
 impl Evaluator {
@@ -16,11 +17,13 @@ impl Evaluator {
         Evaluator {
             heights: [0; 10],
             frame,
+            verbose: false,
         }
     }
 
     pub fn eval(&mut self, verbose: bool    ) -> f64 {
         self.pre_calculations();
+        self.verbose = verbose;
 
         let mut total_score = 0.0;
 
@@ -34,7 +37,7 @@ impl Evaluator {
         ];
 
         for (eval_fn, weight, name) in eval_fns {
-            let score = eval_fn(&self) * weight;
+            let score = eval_fn(self) * weight;
             total_score += score;
             if verbose {
                 println!("{name}: {}", score);
@@ -65,7 +68,7 @@ impl Evaluator {
     }
 
     fn max_height(&self) -> f64 {
-        0.0 - self.heights.iter().max().unwrap().clone() as f64
+        0.0 - *self.heights.iter().max().unwrap() as f64
     }
 
     fn individual_holes(&self) -> f64 {
@@ -114,7 +117,7 @@ impl Evaluator {
         let mut highest_well = 0; // do not punish the highest well
         let heights = &self.heights;
 
-        println!("{:?}", heights);
+        if self.verbose { println!("{:?}", heights); }
 
         // take minimum of height differences of left and right columns
         // punish if the difference is more than 1
@@ -142,7 +145,7 @@ impl Evaluator {
             }
         }
 
-        println!("{:?}", wells);
+        if self.verbose { println!("{:?}", wells); }
 
         (score + highest_well) as f64
     }

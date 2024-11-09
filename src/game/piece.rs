@@ -2,7 +2,6 @@
 //! As a broad overview, the current piece is stored as indices of a 4x4 grid, along with its position in the game matrix.
 
 use crate::botris::types::Piece;
-use super::matrix::{Matrix, EMPTY_BOARD};
 
 impl Piece {
     pub fn rotations(&self) -> [PieceCoords; 4] {
@@ -38,7 +37,7 @@ impl Piece {
 
 pub type PieceCoords = [(i8, i8); 4]; // can be use relative or absolute
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, Hash)]
 pub struct CurrentPiece {
     pub piece: Piece,
     pub y: i8,
@@ -70,6 +69,12 @@ impl CurrentPiece {
         }
         result
     }
+}
+
+impl PartialEq for CurrentPiece {
+    fn eq(&self, other: &Self) -> bool {
+        self.absolute() == other.absolute()
+    }   
 }
 
 

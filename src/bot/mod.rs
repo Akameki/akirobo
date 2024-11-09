@@ -1,2 +1,2 @@
 pub mod bot;
-// pub mod movement;
+pub mod eval;

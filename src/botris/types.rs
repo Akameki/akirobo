@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
 
@@ -68,7 +70,7 @@ pub struct BotInfo {
 	pub developers: Vec<Developer>,
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone, Copy)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Piece {
     I, O, J, L, S, Z, T
 }
@@ -102,6 +104,7 @@ pub type Board = Vec<[Option<Block>; 10]>;
 #[serde(rename_all = "camelCase")]
 pub struct GameState {
     pub board: Board,
+    pub bag: Vec<Piece>,
     pub queue: Vec<Piece>,
     pub garbage_queued: Vec<GarbageLine>,
     pub held: Option<Piece>,
@@ -114,7 +117,7 @@ pub struct GameState {
     pub dead: bool,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Clone, Copy, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Command {
     Hold,
@@ -127,6 +130,32 @@ pub enum Command {
     Drop,
     SonicDrop,
     HardDrop,
+}
+
+// Implement Display for Command to print as symbols
+impl Display for Command {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let symbol = match self {
+            Command::Hold => "Hold",
+            Command::MoveLeft => "<",
+            Command::MoveRight => ">",
+            Command::SonicLeft => "<<",
+            Command::SonicRight => ">>",
+            Command::RotateCw => "CW",
+            Command::RotateCcw => "CCW",
+            Command::Drop => "v",
+            Command::SonicDrop => "V",
+            Command::HardDrop => "!",
+        };
+        write!(f, "{}", symbol)
+    }
+}
+
+// Implement Debug for Command to print as symbols
+impl std::fmt::Debug for Command {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(self, f)
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
