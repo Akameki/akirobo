@@ -44,11 +44,11 @@ async fn main() {
                     let actions = bot.suggest_action(&payload.game_state).await;
                     ws.send_actions(actions).await;
                 },
-                BotrisMsg::PlayerAction(payload) => {
+                BotrisMsg::PlayerAction(_) => {
                     // println!("> {} {}","PlayerAction",payload);
                     // println!("PlayerAction");
                 },
-                BotrisMsg::Error(payload) => println!("> {} {}", "BotrisError", payload),
+                BotrisMsg::Error(payload) => println!("> BotrisError {}", payload),
                 BotrisMsg::RoomData(_) => (),
                 BotrisMsg::Authenticated(payload) => {
                     session_id = payload.session_id;
@@ -61,11 +61,11 @@ async fn main() {
                 BotrisMsg::SettingsChanged(_) => (),
                 BotrisMsg::GameStarted => println!("Game Started"),
                 BotrisMsg::RoundStarted(_) => println!("Round Started"),
-                BotrisMsg::Action(action_payload) => panic!("uhhh"),
-                BotrisMsg::PlayerDamageReceived(player_damage_received_payload) => (),
-                BotrisMsg::RoundOver(end_payload) => println!("Round Over"),
-                BotrisMsg::GameOver(end_payload) => println!("Game Over"),
-                BotrisMsg::GameReset(room_data_payload) => println!("Game Reset"),
+                BotrisMsg::Action(_) => panic!("uhhh"),
+                BotrisMsg::PlayerDamageReceived(_) => (),
+                BotrisMsg::RoundOver(_) => println!("Round Over"),
+                BotrisMsg::GameOver(_) => println!("Game Over"),
+                BotrisMsg::GameReset(_) => println!("Game Reset"),
             }
         }
     }

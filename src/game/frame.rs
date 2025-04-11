@@ -15,7 +15,7 @@ use crate::botris::types::Piece;
 use super::piece::*;
 use super::matrix::*;
 
-#[derive(Debug, Clone, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Frame {
     pub matrix: Matrix,
     // pub bag: Vec<Piece>,
@@ -29,12 +29,6 @@ pub struct Frame {
 
     // pub dropped: bool, // only allow evaluating when the piece has been dropped
     pub depth: usize,
-}
-
-impl PartialEq for Frame {
-    fn eq(&self, other: &Self) -> bool {
-        self.depth == other.depth && self.matrix == other.matrix && self.held == other.held
-    }
 }
 
 impl Frame {
@@ -64,16 +58,43 @@ impl Frame {
         false
     }
 
+
+    fn run_rotate(&self, command: &Command) -> Option<Self> {
+        let mut tentative_piece = self.current.clone();
+        match command {
+            RotateCw => tentative_piece.rotation = (tentative_piece.rotation + 1) % 4,
+            RotateCcw => tentative_piece.rotation = (tentative_piece.rotation + 3) % 4,
+            _ => panic!()
+        }
+
+        // trick kicks in kicktable
+        for (dx, dy) in self.current.piece.kicks(command)[self.current.rotation] {
+            tentative_piece.x += dx;
+            tentative_piece.y += dy;
+            if !self.collides(&tentative_piece) {
+                return Some(Frame{ current: tentative_piece, ..self.clone() });
+            }
+            tentative_piece.x -= dx;
+            tentative_piece.y -= dy;
+        }
+        // no valid rotation
+        None
+    }
+
+    pub fn run_command(&self, command: &Command) -> Self {
+        self.try_command(command).unwrap_or(self.clone())
+    }
+
     // will not place a piece
     // returns None if piece does not move
-    pub fn run_command(&self, command: &Command) -> Option<Self> {
+    pub fn try_command(&self, command: &Command) -> Option<Self> {
         let mut tentative_piece = self.current.clone();
         match command {
             MoveLeft => tentative_piece.x -= 1,
             MoveRight => tentative_piece.x += 1,
             Drop => tentative_piece.y -= 1,
-            RotateCw => tentative_piece.rotation = (tentative_piece.rotation + 1) % 4,
-            RotateCcw => tentative_piece.rotation = (tentative_piece.rotation + 3) % 4,
+            RotateCw => return self.run_rotate(command),
+            RotateCcw => return self.run_rotate(command),
             SonicDrop => {
                 while !self.collides(&tentative_piece) {
                     tentative_piece.y -= 1;
@@ -93,10 +114,6 @@ impl Frame {
         }
 
         if self.collides(&tentative_piece) || tentative_piece == self.current {
-            // if tentative_piece == self.current {
-            //     println!("Command {} didn't do anything", command);
-                
-            // }
             None
         } else {
             Some(Frame{ current: tentative_piece, ..self.clone() })
@@ -104,16 +121,25 @@ impl Frame {
 
     }
     
-    pub fn run_commands(&self, commands: &Vec<Command>) -> Option<Self> {
+    pub fn try_commands(&self, commands: &Vec<Command>) -> Option<Self> {
         let mut frame = self.clone();
         for command in commands {
-            if let Some(new_frame) = frame.run_command(command) {
+            if let Some(new_frame) = frame.try_command(command) {
                 frame = new_frame;
             } else {
                 return None;
             }
         }
         Some(frame)
+    }
+
+    pub fn force_sonic_drop(&self) -> Frame {
+        let mut tentative_piece = self.current.clone();
+        while !self.collides(&tentative_piece) {
+            tentative_piece.y -= 1;
+        }
+        tentative_piece.y += 1;
+        Frame{ current: tentative_piece, ..self.clone() }
     }
 
     // hard drops the piece, changing the matrix and moving to the next piece
@@ -126,9 +152,21 @@ impl Frame {
         }
         tentative_piece.y += 1;
         
+        // check for all spin (immobilility)
+        let mut all_spin = true;
+        for (dy, dx) in &[(0, 0), (0, 1), (1, 0), (1, 1)] {
+            let nudged_piece = CurrentPiece { y: tentative_piece.y + dy, x: tentative_piece.x + dx, ..tentative_piece };
+            if self.collides(&nudged_piece) {
+                all_spin = false;
+                break;
+            }
+
+        }
+
         for (y, x) in tentative_piece.absolute() {
             new_matrix[y as usize][x as usize] = true;
         }
+
 
         // clear lines
         let mut cleared = 0;
@@ -142,15 +180,30 @@ impl Frame {
                 new_matrix[BOARD_HEIGHT - 1] = [false; 10];
             }
         }
-        // calculate attack (need to check for spins later)
-        let mut future_attack = self.future_attack + match cleared {
-            0 => 0,
-            1 => Single.attack(),
-            2 => Double.attack(),
-            3 => Triple.attack(),
-            4 => Quad.attack(),
-            _ => panic!(),
-        };
+
+
+        // calculate attack
+        let mut future_attack = self.future_attack;
+
+        if all_spin {
+            future_attack += match cleared {
+                0 => 0,
+                1 => 4,
+                2 => 4,
+                3 => 6,
+                _ => panic!(),
+            };
+        } else {
+            future_attack += match cleared {
+                0 => 0,
+                1 => Single.attack(),
+                2 => Double.attack(),
+                3 => Triple.attack(),
+                4 => Quad.attack(),
+                _ => panic!(),
+            };
+        }
+        
         // add combo
         future_attack += COMBO_TABLE[self.combo as usize] as u32;
 
@@ -167,7 +220,7 @@ impl Frame {
             current: CurrentPiece::new(self.queue[0]),
             can_hold: true,
             combo: if cleared > 0 { self.combo + 1 } else { 0 },
-            b2b: cleared == 4 || (cleared == 0 && self.b2b), // quad, or no clear with previous b2b
+            b2b: cleared == 4 || (cleared == 0 && self.b2b) || (cleared > 0 && all_spin),
             future_attack,
             // dropped: true,
             depth: self.depth + 1,

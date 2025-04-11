@@ -22,5 +22,6 @@ impl ClearName {
 pub const B2B_ATTACK: u32 = 1;
 
 
-pub const COMBO_TABLE: [u8; 10] = 
-    [0, 0, 1, 1, 1, 2, 2, 3, 3, 4];
+pub const COMBO_TABLE: [u8; 25] = 
+    [0, 0, 1, 1, 1, 2, 2, 3, 3, 4,
+    4,4,4,4,4,4,4,4,4,4,4,4,4,4,4];

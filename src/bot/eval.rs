@@ -33,9 +33,9 @@ impl Evaluator {
 
         let eval_fns: Vec<(fn(&Evaluator) -> f64, f64, &str)> = vec![
             (Self::attacks, 2.0, "attack"),
-            (Self::max_height, 1.0, "max_height"),
-            (Self::individual_holes, 0.3, "total_holes"),
-            (Self::holes, 3.0, "hole_clusters"),
+            (Self::max_height, 2.0, "max_height"),
+            (Self::individual_holes, 2.0, "total_holes"),
+            (Self::holes, 4.0, "hole_clusters"),
             (Self::bumpiness, 0.5, "bumpiness"),
             (Self::exposed_dependencies, 1.0, "exposed_dependencies"),
         ];
@@ -78,7 +78,8 @@ impl Evaluator {
     fn max_height(&self) -> f64 {
         match self.heights.iter().max().unwrap() {
             0 => 0.0,
-            1..=4 => -4.0,
+            1|2 => -1.0,
+            3|4 => -2.0,
             5|6 => -5.0,
             7|8 => -6.0,
             9|10 => -7.0,
@@ -158,7 +159,7 @@ impl Evaluator {
 
         }
         for well in wells {
-            highest_well = cmp::max(highest_well, well);
+            // highest_well = cmp::max(highest_well, well); /// TODO disabled.
             match well {
                 0 => score -= 0,
                 1 => score -= 0,
@@ -171,6 +172,6 @@ impl Evaluator {
 
         if self.verbose { println!("{:?}", wells); }
 
-        (score + highest_well) as f64
+        (score + i32::min(highest_well, 4)) as f64
     }
 }
