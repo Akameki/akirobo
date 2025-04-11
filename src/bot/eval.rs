@@ -2,30 +2,23 @@
 
 use std::{cmp, vec};
 
-use crate::botris::game_info::BOARD_HEIGHT;
-
-use crate::game::frame::Frame;
+use crate::{botris::game_info::BOARD_HEIGHT, game::frame::Frame};
 
 #[derive(Debug, Clone)]
 pub struct Evaluator {
     pub frame: Frame,
     pub score: f64,
-    
+
     heights: [i32; 10],
     verbose: bool,
 }
 
 impl Evaluator {
     pub fn new(frame: Frame) -> Self {
-        Evaluator {
-            frame,
-            heights: [0; 10],
-            score: f64::NAN,
-            verbose: false,
-        }
+        Evaluator { frame, heights: [0; 10], score: f64::NAN, verbose: false }
     }
 
-    pub fn eval(&mut self, verbose: bool    ) -> f64 {
+    pub fn eval(&mut self, verbose: bool) -> f64 {
         self.pre_calculations();
         self.verbose = verbose;
 
@@ -46,7 +39,7 @@ impl Evaluator {
             if verbose {
                 println!("{name}: {}", score);
             }
-        } 
+        }
         if verbose {
             println!("Total score: {}", total_score);
         }
@@ -78,11 +71,11 @@ impl Evaluator {
     fn max_height(&self) -> f64 {
         match self.heights.iter().max().unwrap() {
             0 => 0.0,
-            1|2 => -1.0,
-            3|4 => -2.0,
-            5|6 => -5.0,
-            7|8 => -6.0,
-            9|10 => -7.0,
+            1 | 2 => -1.0,
+            3 | 4 => -2.0,
+            5 | 6 => -5.0,
+            7 | 8 => -6.0,
+            9 | 10 => -7.0,
             11 => -8.0,
             12 => -10.0,
             13 => -12.0,
@@ -142,21 +135,21 @@ impl Evaluator {
         let mut highest_well = 0; // do not punish the highest well
         let heights = &self.heights;
 
-        if self.verbose { println!("{:?}", heights); }
+        if self.verbose {
+            println!("{:?}", heights);
+        }
 
         // take minimum of height differences of left and right columns
         // punish if the difference is more than 1
         wells[0] = cmp::max(heights[1] - heights[0], 0);
         wells[9] = cmp::max(heights[8] - heights[9], 0);
         for i in 1..9 {
-
             let to_left = cmp::max(heights[i - 1] - heights[i], 0);
             let to_right = cmp::max(heights[i + 1] - heights[i], 0);
 
             let well = cmp::min(to_left, to_right);
             // highest_well = cmp::max(highest_well, well);
             wells[i] = well;
-
         }
         for well in wells {
             // highest_well = cmp::max(highest_well, well); /// TODO disabled.
@@ -164,13 +157,13 @@ impl Evaluator {
                 0 => score -= 0,
                 1 => score -= 0,
                 2 => score -= 1,
-                x => {
-                    score -= x
-                }
+                x => score -= x,
             }
         }
 
-        if self.verbose { println!("{:?}", wells); }
+        if self.verbose {
+            println!("{:?}", wells);
+        }
 
         (score + i32::min(highest_well, 4)) as f64
     }

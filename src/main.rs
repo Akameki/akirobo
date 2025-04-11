@@ -1,79 +1,52 @@
-pub mod botris;
 pub mod bot;
+pub mod botris;
 pub mod game;
 
-use std::io::Write;
-
-use crossterm::{
-    cursor, queue, style::{Stylize, PrintStyledContent},
-    terminal::{self, ClearType::*}, ExecutableCommand,
-};
-
-use botris::websocket::BotrisWebSocket;
-use botris::api_messages::BotrisMsg;
 use bot::bot::Bot;
+use botris::{api_messages::BotrisMsg, websocket::BotrisWebSocket};
+use owo_colors::OwoColorize;
 
 #[tokio::main]
 async fn main() {
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.unwrap();
-        std::io::stdout().execute(cursor::Show).unwrap();
         std::process::exit(0);
     });
 
-    let mut stdout = std::io::stdout();
+    println!("{}", "Akirobo".blue().bold().on_white());
 
-    queue!(stdout, terminal::Clear(All), cursor::MoveTo(0,0), cursor::Hide, PrintStyledContent("\n\nAkirobo\n\n".blue().bold()),).unwrap();
-    stdout.flush().unwrap();
-    
     let mut ws = BotrisWebSocket::new().await;
-    let mut session_id = String::new();
+    let mut my_session_id;
 
-    queue!(stdout,
-        cursor::MoveToNextLine(3),
-        cursor::SavePosition
-    ).unwrap();
-
-    
     loop {
         if let Some(message) = ws.read().await {
             match message {
-                BotrisMsg::RequestMove(payload) => {
+                BotrisMsg::RequestMove { game_state, .. } => {
                     println!("\n◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆\n");
                     let mut bot = Bot::new();
-                    let actions = bot.suggest_action(&payload.game_state).await;
-                    ws.send_actions(actions).await;
-                },
-                BotrisMsg::PlayerAction(_) => {
-                    // println!("> {} {}","PlayerAction",payload);
-                    // println!("PlayerAction");
-                },
+                    let commands = bot.suggest_action(&game_state).await;
+                    ws.send_actions(commands).await;
+                }
+                BotrisMsg::PlayerAction { .. } => (),
                 BotrisMsg::Error(payload) => println!("> BotrisError {}", payload),
-                BotrisMsg::RoomData(_) => (),
-                BotrisMsg::Authenticated(payload) => {
-                    session_id = payload.session_id;
-                    println!("Authenticated with SId: {}", session_id);
-                },
-                BotrisMsg::PlayerJoined(_) => (),
-                BotrisMsg::PlayerLeft(_) => (),
-                BotrisMsg::PlayerBanned(_) => (),
-                BotrisMsg::PlayerUnbanned(_) => (),
-                BotrisMsg::SettingsChanged(_) => (),
+                BotrisMsg::RoomData { .. } => (),
+                BotrisMsg::Authenticated { session_id } => {
+                    my_session_id = session_id;
+                    println!("Authenticated with SId: {}", my_session_id);
+                }
+                BotrisMsg::PlayerJoined { .. } => (),
+                BotrisMsg::PlayerLeft { .. } => (),
+                BotrisMsg::PlayerBanned { .. } => (),
+                BotrisMsg::PlayerUnbanned { .. } => (),
+                BotrisMsg::SettingsChanged { .. } => (),
                 BotrisMsg::GameStarted => println!("Game Started"),
-                BotrisMsg::RoundStarted(_) => println!("Round Started"),
-                BotrisMsg::Action(_) => panic!("uhhh"),
-                BotrisMsg::PlayerDamageReceived(_) => (),
-                BotrisMsg::RoundOver(_) => println!("Round Over"),
-                BotrisMsg::GameOver(_) => println!("Game Over"),
-                BotrisMsg::GameReset(_) => println!("Game Reset"),
+                BotrisMsg::RoundStarted { .. } => println!("Round Started"),
+                BotrisMsg::Action { .. } => panic!("uhhh"),
+                BotrisMsg::PlayerDamageReceived { .. } => (),
+                BotrisMsg::RoundOver { .. } => println!("Round Over"),
+                BotrisMsg::GameOver { .. } => println!("Game Over"),
+                BotrisMsg::GameReset { .. } => println!("Game Reset"),
             }
         }
     }
-
-    // loop {
-    //     let mv_req = ws.read_next_move_request().await;
-    //     let actions = bot.request_moves(&mv_req).await;
-    //     ws.send_actions(actions).await;
-    // }
 }
-

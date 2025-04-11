@@ -3,8 +3,6 @@ use std::fmt::Display;
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
 
-
-
 pub type SessionId = String;
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -46,8 +44,6 @@ pub struct PlayerData {
     pub game_state: Option<GameState>,
 }
 
-
-//
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Developer {
@@ -58,30 +54,42 @@ pub struct Developer {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BotInfo {
-	pub id: String,
-	pub name: String,
+    pub id: String,
+    pub name: String,
     // #[serde(skip)]
-	// pub avatar: Bool,
-	pub team: Option<String>,
-	pub language: Option<String>,
-	pub eval: Option<String>,
-	pub movegen: Option<String>,
-	pub search: Option<String>,
-	pub developers: Vec<Developer>,
+    // pub avatar: Bool,
+    pub team: Option<String>,
+    pub language: Option<String>,
+    pub eval: Option<String>,
+    pub movegen: Option<String>,
+    pub search: Option<String>,
+    pub developers: Vec<Developer>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Piece {
-    I, O, J, L, S, Z, T
+    I,
+    O,
+    J,
+    L,
+    S,
+    Z,
+    T,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-
 // may or may not work
 pub enum Block {
-    I, O, J, L, S, Z, T, G, Null
+    I,
+    O,
+    J,
+    L,
+    S,
+    Z,
+    T,
+    G,
+    Null,
 }
-
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -89,13 +97,13 @@ pub struct PieceData {
     pub piece: Piece,
     pub x: i16,
     pub y: i16,
-    pub rotation: u16
+    pub rotation: u16,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GarbageLine {
-    pub delay: Number
+    pub delay: Number,
 }
 
 pub type Board = Vec<[Option<Block>; 10]>;
@@ -132,7 +140,6 @@ pub enum Command {
     HardDrop,
 }
 
-// Implement Display for Command to print as symbols
 impl Display for Command {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let symbol = match self {
@@ -151,7 +158,6 @@ impl Display for Command {
     }
 }
 
-// Implement Debug for Command to print as symbols
 impl std::fmt::Debug for Command {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Display::fmt(self, f)
@@ -179,31 +185,23 @@ pub enum ClearName {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
+#[serde(
+    tag = "type",
+    content = "payload",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
 pub enum GameEvent {
-    PiecePlaced {payload: PiecePlacedType},
-    DamageTanked {payload: DamageTankedType},
-    QueueAdded,
-    Clear,
+    PiecePlaced { initial: PieceData, r#final: PieceData },
+    DamageTanked { hole_indices: Vec<Number> },
+    QueueAdded {},
+    Clear {},
     GameOver,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PiecePlacedType {
-    initial: PieceData,
-    r#final: PieceData,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DamageTankedType {
-    hole_indices: Vec<Number>,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ClearedLines {
-    pub height: Number,
-    pub blocks: Vec<Block>
-}
+// #[derive(Debug, Deserialize, Serialize)]
+// #[serde(rename_all = "camelCase")]
+// pub struct ClearedLines {
+//     pub height: Number,
+//     pub blocks: Vec<Block>,
+// }

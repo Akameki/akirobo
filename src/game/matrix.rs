@@ -1,15 +1,14 @@
-//! Functions for the game matrix, represented as a [[false; 10]; BOARD_HEIGHT]
+use crate::botris::{
+    game_info::BOARD_HEIGHT,
+    types::Board,
+};
 
-use crate::botris::game_info::BOARD_HEIGHT;
-use crate::botris::types::{Board, Block, Piece};
-
-// index 0 is the bottom of the board
+/// index 0 is the bottom of the board
 pub type Matrix = [[bool; 10]; BOARD_HEIGHT];
 
 pub const EMPTY_BOARD: Matrix = [[false; 10]; BOARD_HEIGHT];
 
 pub fn display_matrix(board: &Matrix) {
-    
     for (i, row) in board.iter().rev().enumerate() {
         // ignore rows above 21 if empty
         if i >= 21 && row.iter().all(|&cell| !cell) {
