@@ -1,6 +1,8 @@
 //! Wraps a Frame with an evaluation
 
-use std::{cmp, vec};
+use std::{cmp::{self, max}, vec};
+
+use owo_colors::OwoColorize;
 
 use crate::{botris::game_info::BOARD_HEIGHT, game::frame::Frame};
 
@@ -9,39 +11,38 @@ pub struct Evaluator {
     pub frame: Frame,
     pub score: f64,
 
-    heights: [i32; 10],
+    heights: [usize; 10],
     verbose: bool,
 }
 
 impl Evaluator {
-    pub fn new(frame: Frame) -> Self {
-        Evaluator { frame, heights: [0; 10], score: f64::NAN, verbose: false }
+    pub fn new(frame: Frame, verbose: bool) -> Self {
+        Evaluator { frame, heights: [0; 10], score: f64::NAN, verbose }
     }
 
-    pub fn eval(&mut self, verbose: bool) -> f64 {
+    pub fn eval(&mut self) -> f64 {
         self.pre_calculations();
-        self.verbose = verbose;
 
         let mut total_score = 0.0;
 
-        let eval_fns: Vec<(fn(&Evaluator) -> f64, f64, &str)> = vec![
-            (Self::attacks, 2.0, "attack"),
-            (Self::max_height, 2.0, "max_height"),
-            (Self::individual_holes, 2.0, "total_holes"),
-            (Self::holes, 4.0, "hole_clusters"),
-            (Self::bumpiness, 0.5, "bumpiness"),
-            (Self::exposed_dependencies, 1.0, "exposed_dependencies"),
+        let eval_fns: [(fn(&Self) -> f64, f64, &str); 4] = [
+            (Self::attacks, 1.0, "attack"),
+            (Self::max_height, 1.0, "max_height"),
+            // (Self::blocks_over_empty_spaces, 2.0, "total_holes"),
+            (Self::holes, 3.0, "hole_clusters"),
+            (Self::bumpiness, 0.35, "bumpiness"),
+            // (Self::dependencies, 1.0, "exposed_dependencies"),
         ];
 
         for (eval_fn, weight, name) in eval_fns {
             let score = eval_fn(self) * weight;
             total_score += score;
-            if verbose {
+            if self.verbose {
                 println!("{name}: {}", score);
             }
         }
-        if verbose {
-            println!("Total score: {}", total_score);
+        if self.verbose {
+            println!("{} {}", "Total score:".bold(), total_score.bold());
         }
         self.score = total_score;
         total_score
@@ -52,7 +53,7 @@ impl Evaluator {
             self.heights[x] = 0;
             for y in (0..BOARD_HEIGHT).rev() {
                 if self.frame.matrix[y][x] {
-                    self.heights[x] = y as i32;
+                    self.heights[x] = y;
                     break;
                 }
             }
@@ -61,6 +62,7 @@ impl Evaluator {
 
     // Various evalutaions below
 
+    // attacks = good !
     fn attacks(&self) -> f64 {
         let mut score = 0.0;
         score += self.frame.future_attack as f64;
@@ -68,6 +70,7 @@ impl Evaluator {
         score
     }
 
+    // high board = bad !
     fn max_height(&self) -> f64 {
         match self.heights.iter().max().unwrap() {
             0 => 0.0,
@@ -89,7 +92,8 @@ impl Evaluator {
         }
     }
 
-    fn individual_holes(&self) -> f64 {
+    // blocks above spaces are bad ! especially if multiple spaces!
+    fn blocks_over_empty_spaces(&self) -> f64 {
         let mut score = 0;
         for x in 0..10 {
             let mut holes = 0; // number of holes in the column so far
@@ -104,67 +108,87 @@ impl Evaluator {
         score as f64
     }
 
+    // blocks over gaps are bad!
     fn holes(&self) -> f64 {
-        let mut holes = 0;
+        let mut score = 0;
         for x in 0..10 {
-            let mut over_empty_space = 0;
+            let mut hole_present = false;
             for y in 0..BOARD_HEIGHT {
                 if self.frame.matrix[y][x] {
-                    holes -= over_empty_space;
-                    over_empty_space = 0;
+                    score -= hole_present as i32;
+                    hole_present = false;
                 } else {
-                    over_empty_space = 1;
+                    hole_present = true;
                 }
             }
         }
-        holes as f64
+        score as f64
     }
 
     fn bumpiness(&self) -> f64 {
         let mut bumpiness = 0;
         for i in 0..9 {
-            let bump = (self.heights[i] - self.heights[i + 1]).abs();
+            let bump = (self.heights[i] as i32 - self.heights[i + 1] as i32).abs();
             bumpiness -= bump;
         }
         bumpiness as f64
     }
 
-    fn exposed_dependencies(&self) -> f64 {
-        let mut score = 0;
-        let mut wells = [0; 10]; // 10 columns + 2 for walls
-        let mut highest_well = 0; // do not punish the highest well
-        let heights = &self.heights;
+    // tall wells are bad!
+    fn dependencies(&self) -> f64 {
+        let score = 0.0;
+        // for x in 1..9 {
+        //     let left = 0;
+        //     let right = 0;
+        //     let mut counting = false;
+        //     for y in 0..max(self.heights[x-1], self.heights[x+1]) {
+        //         if !self.frame.matrix[y][x] {
+        //             if counting {
 
-        if self.verbose {
-            println!("{:?}", heights);
-        }
+        //             } else {
+        //                 counting = true;
+        //             }
+        //         }
+        //     }
+        // }
+        score
 
-        // take minimum of height differences of left and right columns
-        // punish if the difference is more than 1
-        wells[0] = cmp::max(heights[1] - heights[0], 0);
-        wells[9] = cmp::max(heights[8] - heights[9], 0);
-        for i in 1..9 {
-            let to_left = cmp::max(heights[i - 1] - heights[i], 0);
-            let to_right = cmp::max(heights[i + 1] - heights[i], 0);
 
-            let well = cmp::min(to_left, to_right);
-            // highest_well = cmp::max(highest_well, well);
-            wells[i] = well;
-        }
-        for well in wells {
-            // highest_well = cmp::max(highest_well, well); /// TODO disabled.
-            match well {
-                0 => score -= 0,
-                1 => score -= 0,
-                2 => score -= 1,
-                x => score -= x,
-            }
-        }
+        // let mut score = 0;
+        // let mut wells = [0; 10]; // 10 columns + 2 for walls
+        // let mut highest_well = 0; // do not punish the highest well
+        // let heights = &self.heights;
 
-        if self.verbose {
-            println!("{:?}", wells);
-        }
+        // if self.verbose {
+        //     println!("{:?}", heights);
+        // }
 
-        (score + i32::min(highest_well, 4)) as f64
+        // // take minimum of height differences of left and right columns
+        // // punish if the difference is more than 1
+        // wells[0] = cmp::max(heights[1] - heights[0], 0);
+        // wells[9] = cmp::max(heights[8] - heights[9], 0);
+        // for i in 1..9 {
+        //     let to_left = cmp::max(heights[i - 1] - heights[i], 0);
+        //     let to_right = cmp::max(heights[i + 1] - heights[i], 0);
+
+        //     let well = cmp::min(to_left, to_right);
+        //     // highest_well = cmp::max(highest_well, well);
+        //     wells[i] = well;
+        // }
+        // for well in wells {
+        //     // highest_well = cmp::max(highest_well, well); /// TODO disabled.
+        //     match well {
+        //         0 => score -= 0,
+        //         1 => score -= 0,
+        //         2 => score -= 1,
+        //         x => score -= x,
+        //     }
+        // }
+
+        // if self.verbose {
+        //     println!("{:?}", wells);
+        // }
+
+        // (score + i32::min(highest_well, 4)) as f64
     }
 }

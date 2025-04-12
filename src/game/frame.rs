@@ -4,6 +4,12 @@
 //!
 //! Also includes methods to run commands and display the frame
 
+use core::fmt;
+
+// use owo_colors::OwoColorize;
+
+use rand::{seq::SliceRandom, thread_rng};
+
 use super::{matrix::*, piece::*};
 use crate::botris::{
     game_info::{BOARD_HEIGHT, COMBO_TABLE},
@@ -13,10 +19,9 @@ use crate::botris::{
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Frame {
     pub matrix: Matrix,
-    // pub bag: Vec<Piece>,
+    pub falling_piece: FallingPiece,
     pub queue: Vec<Piece>,
-    pub held: Option<Piece>,
-    pub current: CurrentPiece,
+    pub held: Piece,
     pub can_hold: bool,
     pub combo: u32,
     pub b2b: bool,
@@ -28,12 +33,19 @@ pub struct Frame {
 
 impl Frame {
     pub fn from_state(game_state: &GameState) -> Self {
+        let mut queue = game_state.queue.clone();
+        queue.extend(game_state.bag.clone());
+        for _ in 0..5 {
+            let mut random_bag= [Piece::I, Piece::J, Piece::L, Piece::O, Piece::S, Piece::T, Piece::Z];
+            random_bag.shuffle(&mut thread_rng());
+            queue.extend(random_bag);
+        }
         Frame {
             matrix: to_board(&game_state.board),
             // bag: game_state.bag.clone(),
-            queue: game_state.queue.clone(),
-            held: game_state.held,
-            current: CurrentPiece::new(game_state.current.piece),
+            queue,
+            held: game_state.held.expect("no held piece in Frame"),
+            falling_piece: FallingPiece::new(game_state.current.piece),
             can_hold: game_state.can_hold,
             combo: game_state.combo,
             b2b: game_state.b2b,
@@ -44,7 +56,7 @@ impl Frame {
         }
     }
 
-    fn collides(&self, tentative_piece: &CurrentPiece) -> bool {
+    fn collides(&self, tentative_piece: &FallingPiece) -> bool {
         for (y, x) in tentative_piece.absolute() {
             if x < 0
                 || y < 0
@@ -58,20 +70,20 @@ impl Frame {
         false
     }
 
-    fn run_rotate(&self, command: &Command) -> Option<Self> {
-        let mut tentative_piece = self.current.clone();
+    fn try_rotate(&self, command: Command) -> Option<Self> {
+        let mut tentative_piece = self.falling_piece.clone();
         match command {
             RotateCw => tentative_piece.rotation = (tentative_piece.rotation + 1) % 4,
             RotateCcw => tentative_piece.rotation = (tentative_piece.rotation + 3) % 4,
             _ => panic!(),
         }
 
-        // trick kicks in kicktable
-        for (dx, dy) in self.current.piece.kicks(command)[self.current.rotation] {
+        // go through kicks in kicktable
+        for [dx, dy] in tentative_piece.piece.kicks(command)[tentative_piece.rotation] {
             tentative_piece.x += dx;
             tentative_piece.y += dy;
             if !self.collides(&tentative_piece) {
-                return Some(Frame { current: tentative_piece, ..self.clone() });
+                return Some(Frame { falling_piece: tentative_piece, ..self.clone() });
             }
             tentative_piece.x -= dx;
             tentative_piece.y -= dy;
@@ -80,20 +92,20 @@ impl Frame {
         None
     }
 
-    pub fn run_command(&self, command: &Command) -> Self {
+    pub fn run_command(&self, command: Command) -> Self {
         self.try_command(command).unwrap_or(self.clone())
     }
 
     // will not place a piece
     // returns None if piece does not move
-    pub fn try_command(&self, command: &Command) -> Option<Self> {
-        let mut tentative_piece = self.current.clone();
+    pub fn try_command(&self, command: Command) -> Option<Self> {
+        let mut tentative_piece = self.falling_piece.clone();
         match command {
             MoveLeft => tentative_piece.x -= 1,
             MoveRight => tentative_piece.x += 1,
             Drop => tentative_piece.y -= 1,
-            RotateCw => return self.run_rotate(command),
-            RotateCcw => return self.run_rotate(command),
+            RotateCw => return self.try_rotate(command),
+            RotateCcw => return self.try_rotate(command),
             SonicDrop => {
                 while !self.collides(&tentative_piece) {
                     tentative_piece.y -= 1;
@@ -102,14 +114,14 @@ impl Frame {
             }
             Hold => {
                 // Assume always start game with held piece // todo
-                if !self.can_hold || self.held.unwrap() == self.current.piece {
+                if !self.can_hold || self.held == self.falling_piece.piece {
                     return None;
                 }
-                let held_piece = self.held.unwrap();
-                tentative_piece = CurrentPiece::new(held_piece);
+                let held_piece = self.held;
+                tentative_piece = FallingPiece::new(held_piece);
                 return Some(Frame {
-                    held: Some(self.current.piece),
-                    current: tentative_piece,
+                    held: self.falling_piece.piece,
+                    falling_piece: tentative_piece,
                     can_hold: false,
                     ..self.clone()
                 });
@@ -117,17 +129,17 @@ impl Frame {
             _ => panic!(),
         }
 
-        if self.collides(&tentative_piece) || tentative_piece == self.current {
+        if self.collides(&tentative_piece) || tentative_piece == self.falling_piece {
             None
         } else {
-            Some(Frame { current: tentative_piece, ..self.clone() })
+            Some(Frame { falling_piece: tentative_piece, ..self.clone() })
         }
     }
 
-    pub fn try_commands(&self, commands: &Vec<Command>) -> Option<Self> {
+    pub fn try_commands(&self, commands: &[Command]) -> Option<Self> {
         let mut frame = self.clone();
         for command in commands {
-            if let Some(new_frame) = frame.try_command(command) {
+            if let Some(new_frame) = frame.try_command(*command) {
                 frame = new_frame;
             } else {
                 return None;
@@ -137,18 +149,18 @@ impl Frame {
     }
 
     pub fn force_sonic_drop(&self) -> Frame {
-        let mut tentative_piece = self.current.clone();
+        let mut tentative_piece = self.falling_piece.clone();
         while !self.collides(&tentative_piece) {
             tentative_piece.y -= 1;
         }
         tentative_piece.y += 1;
-        Frame { current: tentative_piece, ..self.clone() }
+        Frame { falling_piece: tentative_piece, ..self.clone() }
     }
 
     // hard drops the piece, changing the matrix and moving to the next piece
     pub fn hard_drop(&self) -> Frame {
         let mut new_matrix = self.matrix;
-        let mut tentative_piece = self.current.clone();
+        let mut tentative_piece = self.falling_piece.clone();
         while !self.collides(&tentative_piece) {
             tentative_piece.y -= 1;
         }
@@ -157,7 +169,7 @@ impl Frame {
         // check for all spin (immobilility)
         let mut all_spin = true;
         for (dy, dx) in &[(0, 0), (0, 1), (1, 0), (1, 1)] {
-            let nudged_piece = CurrentPiece {
+            let nudged_piece = FallingPiece {
                 y: tentative_piece.y + dy,
                 x: tentative_piece.x + dx,
                 ..tentative_piece
@@ -220,7 +232,7 @@ impl Frame {
             matrix: new_matrix,
             queue: self.queue[1..].to_vec(),
             held: self.held,
-            current: CurrentPiece::new(self.queue[0]),
+            falling_piece: FallingPiece::new(self.queue[0]),
             can_hold: true,
             combo: if cleared > 0 { self.combo + 1 } else { 0 },
             b2b: cleared == 4 || (cleared == 0 && self.b2b) || (cleared > 0 && all_spin),
@@ -231,41 +243,95 @@ impl Frame {
         }
     }
 
-    // // move onto the next piece (only when dropped)
-    // pub fn advance(&self) -> Frame {
-    //     if !self.dropped {
-    //         panic!("Cannot advance without dropping the piece");
+    // Print the board in a pretty fashion:
+    // At most 3 lines of empty rows
+    // Print the falling piece in color so it's visible
+    // etc.
+    // pub fn pretty_print(&self) {
+    //     println!("--------------------");
+    //     let mut pretty_matrix_string: [[char; 20]; BOARD_HEIGHT] = [[' '; 20]; BOARD_HEIGHT];
+    //     let mut stack_height = 0;
+    //     for (y, x) in self.falling_piece.absolute() {
+    //         pretty_matrix_string[y as usize][x as usize * 2] = '(';
+    //         pretty_matrix_string[y as usize][x as usize * 2 + 1] = ')';
     //     }
-    //     let mut new_frame = self.clone();
-    //     new_frame.dropped = false;
-    //     new_frame.current = CurrentPiece::new(new_frame.queue[0]);
-    //     new_frame.queue = new_frame.queue[1..].to_vec();
-    //     new_frame
+    //     for y in (0..BOARD_HEIGHT).rev() {
+    //         // ignore rows above 21 if empty
+    //         if y >= 21 && self.matrix[y].iter().all(|&cell| !cell) {
+    //             continue;
+    //         }
+    //         for x in 0..10 {
+    //             if self.matrix[y][x] {
+    //                 stack_height = std::cmp::max(stack_height, y);
+    //                 pretty_matrix_string[y][x * 2] = '[';
+    //                 pretty_matrix_string[y][x * 2 + 1] = ']';
+    //             }
+    //         }
+    //     }
+
+    //     // print lines with falling piece, and skip until within 2 lines of stack
+    //     for y in (0..BOARD_HEIGHT).rev() {
+    //         // ignore rows above 21 if empty
+    //         if y >= 21 && self.matrix[y].iter().all(|&cell| !cell) {
+    //             continue;
+    //         }
+    //         // print the line with the falling piece
+    //         for x in 0..20 {
+    //             print!("{}", pretty_matrix_string[y][x].to_string().green());
+    //         }
+    //         println!();
+    //     }
     // }
 
-    pub fn display(&self) {
-        println!("====================");
+}
+
+impl fmt::Display for Frame {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "====================")?;
         let matrix = self.matrix;
-
-        // for (y, x) in self.current.absolute() {
-        //     matrix[y as usize][x as usize] = false; // Clear the current piece position in the matrix
-        // }
-
         for y in (0..matrix.len()).rev() {
             // ignore rows above 21 if empty
             if y >= 21 && matrix[y].iter().all(|&cell| !cell) {
                 continue;
             }
             for x in 0..10 {
-                if self.current.absolute().contains(&(y as i8, x as i8)) {
-                    print!("()");
+                if self.falling_piece.absolute().contains(&(y as i8, x as i8)) {
+                    write!(f, "██")?;
                 } else {
-                    print!("{}", if matrix[y][x] { "[]" } else { "  " });
+                    write!(f, "{}", if matrix[y][x] { "[]" } else { "  " })?;
                 }
             }
-            println!();
+            writeln!(f)?;
         }
+        write!(f, "====================")
+    }
+}
 
-        println!("====================");
+#[cfg(test)]
+mod test {
+    use crate::{botris::types::{Command::*, GameState, Piece}, game::{matrix::{Matrix, EMPTY_BOARD}, piece::FallingPiece}};
+
+    use super::Frame;
+
+    #[test]
+    fn play_moves() {
+        let mut frame = Frame {
+            matrix: EMPTY_BOARD,
+            falling_piece: FallingPiece::new(Piece::O),
+            queue: vec![Piece::O, Piece::O, Piece::O],
+            held: Piece::O,
+            can_hold: true,
+            combo: 0,
+            b2b: false,
+            future_attack: 0,
+            depth: 0,
+        };
+        let moves = vec![RotateCcw, RotateCcw, RotateCcw, RotateCcw, MoveRight, MoveRight, MoveRight];
+        println!("{}", frame);
+        for command in moves {
+            println!("Running command: {:?}", command);
+            frame = frame.run_command(command);
+            println!("{}", frame);
+        }
     }
 }

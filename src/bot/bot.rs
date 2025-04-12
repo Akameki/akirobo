@@ -3,6 +3,8 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
+use owo_colors::OwoColorize;
+
 use crate::{
     bot::eval::Evaluator,
     botris::types::{Command, Command::*, GameState},
@@ -36,14 +38,13 @@ impl Bot {
     }
 
     pub async fn suggest_action(&mut self, game_state: &GameState) -> Vec<Command> {
-        // if first piece, hold
         if game_state.held.is_none() {
             return vec![Hold];
         }
         // println!("current: {:?}\nqueue: {:?}\nbag: {:?}", game_state.current.piece, game_state.queue, game_state.bag);
 
         let frame = Frame::from_state(game_state);
-        frame.display();
+        println!("{}", frame.on_blue());
 
         /* generate possible frames */
 
@@ -105,7 +106,7 @@ impl Bot {
             // println!("{} {:?}", score, commands);
         }
 
-        best_frame.display();
+        println!("{}", best_frame.on_green());
         println!("Best: {} {:?} (depth {})", best_frame_score, best_frame_commands, QUEUE_DEPTH);
         Evaluator::new(best_frame).eval(true);
 

@@ -2,7 +2,8 @@ pub mod bot;
 pub mod botris;
 pub mod game;
 
-use bot::bot::Bot;
+// use bot::bot::Bot;
+use bot::akirobo::{self, Akirobo};
 use botris::{api_messages::BotrisMsg, websocket::BotrisWebSocket};
 use owo_colors::OwoColorize;
 
@@ -22,9 +23,9 @@ async fn main() {
         if let Some(message) = ws.read().await {
             match message {
                 BotrisMsg::RequestMove { game_state, .. } => {
-                    println!("\n◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆◆\n");
-                    let mut bot = Bot::new();
-                    let commands = bot.suggest_action(&game_state).await;
+                    // let mut bot = Bot::new();
+                    let mut akirobo = Akirobo::new();
+                    let commands = akirobo.suggest_action(&game_state).await;
                     ws.send_actions(commands).await;
                 }
                 BotrisMsg::PlayerAction { .. } => (),

@@ -125,7 +125,7 @@ pub struct GameState {
     pub dead: bool,
 }
 
-#[derive(Clone, Copy, Deserialize, Serialize)]
+#[derive(Clone, Copy, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum Command {
     Hold,
