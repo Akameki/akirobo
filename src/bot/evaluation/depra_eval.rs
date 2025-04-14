@@ -1,51 +1,47 @@
-//! Wraps a Frame with an evaluation
-
-use std::{cmp::{self, max}, vec};
-
 use owo_colors::OwoColorize;
 
 use crate::{botris::game_info::BOARD_HEIGHT, game::frame::Frame};
 
+
 #[derive(Debug, Clone)]
-pub struct Evaluator {
+pub struct DepraEval {
     pub frame: Frame,
-    pub score: f64,
 
     heights: [usize; 10],
     verbose: bool,
 }
 
-impl Evaluator {
+impl DepraEval {
     pub fn new(frame: Frame, verbose: bool) -> Self {
-        Evaluator { frame, heights: [0; 10], score: f64::NAN, verbose }
+        DepraEval { frame, heights: [0; 10], verbose }
     }
 
-    pub fn eval(&mut self) -> f64 {
+    pub fn eval(&mut self) -> f32 {
         self.pre_calculations();
 
-        let mut total_score = 0.0;
+        let mut total_eval = 0.0;
 
-        let eval_fns: [(fn(&Self) -> f64, f64, &str); 4] = [
+        let eval_fns: [(fn(&Self) -> f32, f32, &str); 4] = [
             (Self::attacks, 1.0, "attack"),
-            (Self::max_height, 1.0, "max_height"),
+            (Self::max_height, 0.6, "max_height"),
             // (Self::blocks_over_empty_spaces, 2.0, "total_holes"),
             (Self::holes, 3.0, "hole_clusters"),
-            (Self::bumpiness, 0.35, "bumpiness"),
+            (Self::bumpiness, 0.1, "bumpiness"),
             // (Self::dependencies, 1.0, "exposed_dependencies"),
         ];
 
         for (eval_fn, weight, name) in eval_fns {
-            let score = eval_fn(self) * weight;
-            total_score += score;
+            let score = eval_fn(self);
+            let weighted = score * weight;
+            total_eval += weighted;
             if self.verbose {
-                println!("{name}: {}", score);
+                println!("{name:>15}: {score:>5.1} * {weight:>4.1} = {weighted:>5.1}");
             }
         }
         if self.verbose {
-            println!("{} {}", "Total score:".bold(), total_score.bold());
+            println!("{:>15}: {:>12.1}", "Total score".bold(), total_eval.bold());
         }
-        self.score = total_score;
-        total_score
+        total_eval
     }
 
     fn pre_calculations(&mut self) {
@@ -60,40 +56,38 @@ impl Evaluator {
         }
     }
 
-    // Various evalutaions below
-
     // attacks = good !
-    fn attacks(&self) -> f64 {
+    fn attacks(&self) -> f32 {
         let mut score = 0.0;
-        score += self.frame.future_attack as f64;
-        score += if self.frame.b2b { 1 } else { 0 } as f64;
+        score += self.frame.stored_attack as f32;
+        score += if self.frame.b2b { 0.75 } else { 0.0 };
         score
     }
 
     // high board = bad !
-    fn max_height(&self) -> f64 {
+    fn max_height(&self) -> f32 {
         match self.heights.iter().max().unwrap() {
             0 => 0.0,
-            1 | 2 => -1.0,
-            3 | 4 => -2.0,
-            5 | 6 => -5.0,
-            7 | 8 => -6.0,
-            9 | 10 => -7.0,
-            11 => -8.0,
-            12 => -10.0,
-            13 => -12.0,
-            14 => -14.0,
-            15 => -16.0,
+            1 | 2 => 0.0,
+            3 | 4 => -0.5,
+            5 | 6 => -1.0,
+            7 | 8 => -2.0,
+            9 | 10 => -3.0,
+            11 => -4.0,
+            12 => -5.5,
+            13 => -7.5,
+            14 => -10.0,
+            15 => -13.0,
             16 => -17.0,
-            17 => -20.0,
-            18 => -25.0,
-            19 => -30.0,
-            _ => -50.0,
+            17 => -23.0,
+            18 => -32.0,
+            19 => -50.0,
+            _ => -100.0,
         }
     }
 
     // blocks above spaces are bad ! especially if multiple spaces!
-    fn blocks_over_empty_spaces(&self) -> f64 {
+    fn blocks_over_empty_spaces(&self) -> f32 {
         let mut score = 0;
         for x in 0..10 {
             let mut holes = 0; // number of holes in the column so far
@@ -105,11 +99,11 @@ impl Evaluator {
                 }
             }
         }
-        score as f64
+        score as f32
     }
 
     // blocks over gaps are bad!
-    fn holes(&self) -> f64 {
+    fn holes(&self) -> f32 {
         let mut score = 0;
         for x in 0..10 {
             let mut hole_present = false;
@@ -122,20 +116,20 @@ impl Evaluator {
                 }
             }
         }
-        score as f64
+        score as f32
     }
 
-    fn bumpiness(&self) -> f64 {
+    fn bumpiness(&self) -> f32 {
         let mut bumpiness = 0;
         for i in 0..9 {
             let bump = (self.heights[i] as i32 - self.heights[i + 1] as i32).abs();
             bumpiness -= bump;
         }
-        bumpiness as f64
+        bumpiness as f32
     }
 
     // tall wells are bad!
-    fn dependencies(&self) -> f64 {
+    fn dependencies(&self) -> f32 {
         let score = 0.0;
         // for x in 1..9 {
         //     let left = 0;
@@ -189,6 +183,6 @@ impl Evaluator {
         //     println!("{:?}", wells);
         // }
 
-        // (score + i32::min(highest_well, 4)) as f64
+        // (score + i32::min(highest_well, 4)) as f32
     }
 }

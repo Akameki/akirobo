@@ -3,50 +3,57 @@ pub mod botris;
 pub mod game;
 
 // use bot::bot::Bot;
-use bot::akirobo::{self, Akirobo};
-use botris::{api_messages::BotrisMsg, websocket::BotrisWebSocket};
+use bot::akirobo::Akirobo;
+use botris::{api_messages::BotrisMsg, types::Command, websocket::BotrisWebSocket};
+use dotenv::{dotenv, var};
+use game::frame::Frame;
 use owo_colors::OwoColorize;
 
-#[tokio::main]
-async fn main() {
-    tokio::spawn(async move {
-        tokio::signal::ctrl_c().await.unwrap();
-        std::process::exit(0);
-    });
+// #[tokio::main]
+fn main() {
+    // tokio::spawn(async move {
+    //     tokio::signal::ctrl_c().await.unwrap();
+    //     std::process::exit(0);
+    // });
 
     println!("{}", "Akirobo".blue().bold().on_white());
 
-    let mut ws = BotrisWebSocket::new().await;
-    let mut my_session_id;
+    dotenv().ok();
+    let token = var("TOKEN").expect("Set TOKEN in .env");
+    let room_key = var("ROOMKEY").expect("Set ROOMKEY in .env");
+    let url = format!("wss://botrisbattle.com/ws?token={token}&roomKey={room_key}");
+
+    let mut ws = BotrisWebSocket::new(url);
 
     loop {
-        if let Some(message) = ws.read().await {
+        if let Some(message) = ws.read() {
             match message {
                 BotrisMsg::RequestMove { game_state, .. } => {
-                    // let mut bot = Bot::new();
                     let mut akirobo = Akirobo::new();
-                    let commands = akirobo.suggest_action(&game_state).await;
-                    ws.send_actions(commands).await;
+                    if game_state.held.is_none() {
+                        println!("Holding first piece!");
+                        ws.send_actions(vec![Command::Hold])
+                    } else {
+                        let commands = akirobo.suggest_action(Frame::from_state(&game_state));
+                        ws.send_actions(commands);
+                    }
                 }
                 BotrisMsg::PlayerAction { .. } => (),
-                BotrisMsg::Error(payload) => println!("> BotrisError {}", payload),
+                BotrisMsg::Error(payload) => println!("BotrisError: {}", payload.magenta()),
                 BotrisMsg::RoomData { .. } => (),
-                BotrisMsg::Authenticated { session_id } => {
-                    my_session_id = session_id;
-                    println!("Authenticated with SId: {}", my_session_id);
-                }
-                BotrisMsg::PlayerJoined { .. } => (),
-                BotrisMsg::PlayerLeft { .. } => (),
-                BotrisMsg::PlayerBanned { .. } => (),
-                BotrisMsg::PlayerUnbanned { .. } => (),
-                BotrisMsg::SettingsChanged { .. } => (),
-                BotrisMsg::GameStarted => println!("Game Started"),
-                BotrisMsg::RoundStarted { .. } => println!("Round Started"),
+                BotrisMsg::Authenticated { session_id } => println!("Authenticated ({session_id})"),
+                BotrisMsg::PlayerJoined { .. } => println!("Player Joined"),
+                BotrisMsg::PlayerLeft { .. } => println!("Player Left"),
+                BotrisMsg::PlayerBanned { .. } => println!("Player banned"),
+                BotrisMsg::PlayerUnbanned { .. } => println!("Player unbanned"),
+                BotrisMsg::SettingsChanged { .. } => println!("Settings Changed"),
+                BotrisMsg::GameStarted => println!("{}", "Game Started".cyan()),
+                BotrisMsg::RoundStarted { .. } => println!("{}", "Round Started".cyan()),
                 BotrisMsg::Action { .. } => panic!("uhhh"),
                 BotrisMsg::PlayerDamageReceived { .. } => (),
-                BotrisMsg::RoundOver { .. } => println!("Round Over"),
-                BotrisMsg::GameOver { .. } => println!("Game Over"),
-                BotrisMsg::GameReset { .. } => println!("Game Reset"),
+                BotrisMsg::RoundOver { .. } => println!("{}", "Round Over".cyan()),
+                BotrisMsg::GameOver { .. } => println!("{}", "Game Over".cyan()),
+                BotrisMsg::GameReset { .. } => println!("{}", "Game Reset".cyan()),
             }
         }
     }
