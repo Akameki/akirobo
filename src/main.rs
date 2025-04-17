@@ -29,6 +29,7 @@ fn main() {
         if let Some(message) = ws.read() {
             match message {
                 BotrisMsg::RequestMove { game_state, .. } => {
+                    // println!("{:?}", game_state.garbage_queued);
                     let mut akirobo = Akirobo::new();
                     if game_state.held.is_none() {
                         println!("Holding first piece!");

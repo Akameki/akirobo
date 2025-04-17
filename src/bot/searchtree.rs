@@ -30,8 +30,8 @@ impl PlacementNode {
         })
     }
 
-    pub fn is_root(&self) -> bool {
-        self.parent.is_none()
+    pub fn get_root_placement(&self) -> Frame {
+        self.parent.as_ref().map_or(self.placement.clone(), |p| p.get_root_placement())
     }
 
     pub fn get_path_from_root(&self) -> Vec<Frame> {

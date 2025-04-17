@@ -5,7 +5,7 @@
 //! Also includes methods to run commands and display the frame
 
 use core::fmt;
-use std::hash::Hash;
+use std::{cmp::min, hash::Hash};
 
 use rand::{seq::SliceRandom, thread_rng};
 
@@ -15,7 +15,7 @@ use crate::botris::{
     types::{
         ClearName::*,
         Command::{self, *},
-        GameState, Piece,
+        GameState, GarbageLine, Piece,
     },
 };
 
@@ -29,6 +29,9 @@ pub struct Frame {
     pub combo: u32,
     pub b2b: bool,
     pub stored_attack: u32,
+    pub incoming: Vec<[u16; 2]>,
+    /// number of lines in the matrix that is treated is unclearable
+    pub simulated_garbage: usize,
 
     pub confirmed_on_bottom: bool,
     // pub dropped: bool, // only allow evaluating when the piece has been dropped
@@ -44,6 +47,7 @@ impl PartialEq for Frame {
             && self.can_hold == other.can_hold
             && self.combo == other.combo
             && self.b2b == other.b2b
+            && self.incoming == other.incoming
             && self.confirmed_on_bottom == other.confirmed_on_bottom
             && self.stored_attack == other.stored_attack
     }
@@ -57,6 +61,7 @@ impl Hash for Frame {
         self.can_hold.hash(state);
         self.combo.hash(state);
         self.b2b.hash(state);
+        self.incoming.hash(state);
         self.stored_attack.hash(state);
         self.confirmed_on_bottom.hash(state);
     }
@@ -72,6 +77,25 @@ impl Frame {
             random_bag.shuffle(&mut thread_rng());
             queue.extend(random_bag);
         }
+
+        let mut incoming: Vec<[u16; 2]> = Vec::new();
+        let mut current = [0, 0];
+        for GarbageLine { delay } in &game_state.garbage_queued {
+            // assume we can play above 2pps
+            let delay = delay.as_u64().unwrap() as u16 * 2;
+            if delay != current[1] {
+                if current != [0, 0] {
+                    incoming.push(current);
+                }
+                current = [1, delay];
+            } else {
+                current[0] += 1;
+            }
+        }
+        if current != [0, 0] {
+            incoming.push(current);
+        }
+
         Frame {
             matrix: to_board(&game_state.board),
             // bag: game_state.bag.clone(),
@@ -82,6 +106,8 @@ impl Frame {
             combo: game_state.combo,
             b2b: game_state.b2b,
             stored_attack: 0,
+            incoming,
+            simulated_garbage: 0,
             // dropped: false,
             confirmed_on_bottom: false,
             depth: 0,
@@ -89,13 +115,9 @@ impl Frame {
         }
     }
 
-    fn collides_with_board(&self, tentative_piece: &FallingPiece) -> bool {
+    fn collides_with_board(board: &Matrix, tentative_piece: &FallingPiece) -> bool {
         tentative_piece.absolute().iter().any(|&(y, x)| {
-            x < 0
-                || y < 0
-                || x >= 10
-                || y >= BOARD_HEIGHT as i8
-                || self.matrix[y as usize][x as usize]
+            x < 0 || y < 0 || x >= 10 || y >= BOARD_HEIGHT as i8 || board[y as usize][x as usize]
         })
     }
 
@@ -117,7 +139,7 @@ impl Frame {
                 {
                     tentative_piece.x += x_kick;
                     tentative_piece.y += y_kick;
-                    if !self.collides_with_board(&tentative_piece) {
+                    if !Self::collides_with_board(&self.matrix, &tentative_piece) {
                         break;
                     }
                     tentative_piece.x -= x_kick;
@@ -126,7 +148,7 @@ impl Frame {
                 // if no kicks work (rotation fails), collision is checked before return!
             }
             SonicDrop => {
-                while !self.collides_with_board(&tentative_piece) {
+                while !Self::collides_with_board(&self.matrix, &tentative_piece) {
                     tentative_piece.y -= 1;
                 }
                 tentative_piece.y += 1;
@@ -148,7 +170,9 @@ impl Frame {
             _ => panic!(),
         }
 
-        if self.collides_with_board(&tentative_piece) || tentative_piece == self.falling_piece {
+        if Self::collides_with_board(&self.matrix, &tentative_piece)
+            || tentative_piece == self.falling_piece
+        {
             None
         } else {
             Some(Frame { falling_piece: tentative_piece, confirmed_on_bottom, ..self.clone() })
@@ -161,7 +185,7 @@ impl Frame {
 
     pub fn force_sonic_drop(&self) -> Frame {
         let mut tentative_piece = self.falling_piece.clone();
-        while !self.collides_with_board(&tentative_piece) {
+        while !Self::collides_with_board(&self.matrix, &tentative_piece) {
             tentative_piece.y -= 1;
         }
         tentative_piece.y += 1;
@@ -169,10 +193,14 @@ impl Frame {
     }
 
     /// clearing lines and calculating attack, advancing to the next piece
-    pub fn lock_piece(&self) -> Frame {
+    pub fn lock_piece(&self) -> Option<Frame> {
+        if Self::collides_with_board(&self.matrix, &self.falling_piece) {
+            return None;
+        }
+
         let mut new_matrix = self.matrix;
         // let mut tentative_piece = self.falling_piece.clone();
-        // while !self.collides_with_board(&tentative_piece) {
+        // while !Self::collides_with_board(&self.matrix, &tentative_piece) {
         //     tentative_piece.y -= 1;
         // }
         // tentative_piece.y += 1;
@@ -180,11 +208,14 @@ impl Frame {
 
         // check for all spin (immobilility) (no need to check down direction)
         let all_spin = [(0, 1), (1, 0), (-1, 0)].iter().all(|(dx, dy)| {
-            self.collides_with_board(&FallingPiece {
-                x: self.falling_piece.x + dx,
-                y: self.falling_piece.y + dy,
-                ..self.falling_piece
-            })
+            Self::collides_with_board(
+                &self.matrix,
+                &FallingPiece {
+                    x: self.falling_piece.x + dx,
+                    y: self.falling_piece.y + dy,
+                    ..self.falling_piece
+                },
+            )
         });
 
         // lock piece into matrix
@@ -193,20 +224,30 @@ impl Frame {
         }
 
         // clear lines
-        let mut cleared = 0;
-        for y in (0..BOARD_HEIGHT).rev() {
-            if new_matrix[y].iter().all(|&x| x) {
-                cleared += 1;
-                // shift rows down
-                for i in y..BOARD_HEIGHT - 1 {
-                    new_matrix[i] = new_matrix[i + 1];
+        let cleared = {
+            let mut cleared = 0;
+            let mut y = BOARD_HEIGHT - 1;
+            while y >= self.simulated_garbage {
+                if new_matrix[y].iter().all(|&x| x) {
+                    cleared += 1;
+                    new_matrix.copy_within((y + 1).., y);
+                    new_matrix[BOARD_HEIGHT - 1] = [false; 10];
+                    // don't decrement y so we re-check the row that was shifted down
+                } else {
+                    if y == 0 {
+                        // don't underflow usize
+                        break;
+                    }
+                    y -= 1;
                 }
-                new_matrix[BOARD_HEIGHT - 1] = [false; 10];
             }
-        }
+            cleared
+        };
 
         // calculate attack
         let mut this_attack = 0;
+        let mut new_incoming = vec![];
+        let mut additional_garbage: usize = 0;
 
         if cleared > 0 {
             if all_spin {
@@ -232,63 +273,88 @@ impl Frame {
             if self.b2b && (cleared == 4 || all_spin) {
                 this_attack += B2B_ATTACK;
             }
+            for [lines, delay] in &self.incoming {
+                new_incoming.push([*lines, if *delay == 0 { 0 } else { *delay - 1 }])
+            }
+        } else {
+            for [lines, delay] in &self.incoming {
+                if *delay == 0 {
+                    additional_garbage += *lines as usize;
+                } else {
+                    new_incoming.push([*lines, *delay - 1]);
+                }
+            }
+            if additional_garbage > 0 {
+                additional_garbage = min(additional_garbage, BOARD_HEIGHT);
+                new_matrix.copy_within(..(BOARD_HEIGHT - additional_garbage), additional_garbage);
+                for row in &mut new_matrix[..additional_garbage] {
+                    *row = [true; 10];
+                }
+            }
         }
 
-        Frame {
+        if Self::collides_with_board(&new_matrix, &FallingPiece::new(self.queue[0])) {
+            return None;
+        }
+
+        Some(Frame {
             matrix: new_matrix,
             queue: self.queue[1..].to_vec(),
             held: self.held,
             falling_piece: FallingPiece::new(self.queue[0]),
             can_hold: true,
             combo: if cleared > 0 { self.combo + 1 } else { 0 },
-            b2b: cleared == 4 || all_spin,
+            b2b: (self.b2b && cleared == 0 ) || cleared == 4 || all_spin,
             stored_attack: self.stored_attack + this_attack,
+            incoming: new_incoming,
+            simulated_garbage: self.simulated_garbage + additional_garbage,
             depth: self.depth + 1,
             confirmed_on_bottom: false,
-        }
+        })
     }
 
     // print frames side by side
-    pub fn print_frames(frames: &[Frame]) {
-        // print held piece and next 5 in queue
-        print!("▒");
-        for frame in frames {
-            print!(
-                "[{:?}]{}      {:?} {:?}{:?}{:?}{:?} ▒ ▒",
-                frame.held,
-                if frame.can_hold {"    "} else {"HELD"},
-                frame.queue[0],
-                frame.queue[1],
-                frame.queue[2],
-                frame.queue[3],
-                frame.queue[4]
-            );
-        }
-        println!();
-
-        for y in (0..BOARD_HEIGHT).rev() {
-            if y >= 21 && frames.iter().all(|frame| frame.matrix[y].iter().all(|&cell| !cell)) {
-                continue;
+    pub fn print_frames(frames: &[Frame], max_per_row: usize) {
+        for chunk in frames.chunks(max_per_row) {
+            // print held piece and next 5 in queue
+            for frame in chunk {
+                print!(
+                    "\"[{:?}]{}      {:?} {:?}{:?}{:?}{:?} \"",
+                    frame.held,
+                    if frame.can_hold { "    " } else { "HELD" },
+                    frame.queue[0],
+                    frame.queue[1],
+                    frame.queue[2],
+                    frame.queue[3],
+                    frame.queue[4]
+                );
             }
-            for frame in frames {
-                print!("▒");
-                for x in 0..10 {
-                    if frame.falling_piece.absolute().contains(&(y as i8, x as i8)) {
-                        print!("██");
-                    } else {
-                        print!("{}", if frame.matrix[y][x] { "[]" } else { "  " });
-                    }
+            println!();
+
+            for y in (0..BOARD_HEIGHT).rev() {
+                if y >= 21 && chunk.iter().all(|frame| frame.matrix[y].iter().all(|&cell| !cell)) {
+                    continue;
                 }
-                print!("▒");
+                for frame in chunk {
+                    print!("\"");
+                    for x in 0..10 {
+                        if frame.falling_piece.absolute().contains(&(y as i8, x as i8)) {
+                            print!("██");
+                        } else {
+                            print!("{}", if frame.matrix[y][x] { "[]" } else { "  " });
+                        }
+                    }
+                    print!("\"");
+                }
+                println!();
             }
             println!();
         }
     }
 
-
     // create Frame from Strings (rows) of "  " and non-space "??" chars.
     // append empty rows above to meet board height.
-    pub fn from_strings(rows: Vec<String>) -> Frame {
+    pub fn from_strings(rows: &[&str]) -> Frame {
         assert!(rows.len() <= BOARD_HEIGHT);
         let mut matrix = EMPTY_BOARD;
         for (y, row) in rows.iter().rev().enumerate() {
@@ -296,17 +362,25 @@ impl Frame {
                 matrix[y][x] = cell != ' ';
             }
         }
+        Frame { matrix, ..Default::default() }
+    }
+}
+
+impl Default for Frame {
+    fn default() -> Self {
         Frame {
-            matrix,
+            matrix: EMPTY_BOARD,
             falling_piece: FallingPiece::new(Piece::I),
             queue: vec![],
-            held: Piece::I,
+            held: Piece::O,
             can_hold: true,
             combo: 0,
             b2b: false,
             stored_attack: 0,
             depth: 0,
             confirmed_on_bottom: false,
+            incoming: vec![],
+            simulated_garbage: 0,
         }
     }
 }
@@ -338,33 +412,27 @@ mod test {
     use super::Frame;
     use crate::{
         botris::types::{Command::*, Piece},
-        game::{
-            matrix::EMPTY_BOARD,
-            piece::FallingPiece,
-        },
+        game::piece::FallingPiece,
     };
 
     #[test]
     fn play_moves() {
         let mut frame = Frame {
-            matrix: EMPTY_BOARD,
             falling_piece: FallingPiece::new(Piece::O),
-            queue: vec![Piece::O, Piece::O, Piece::O],
+            queue: vec![Piece::O, Piece::O, Piece::O, Piece::O, Piece::O],
             held: Piece::O,
-            can_hold: true,
-            combo: 0,
-            b2b: false,
-            stored_attack: 0,
-            depth: 0,
-            confirmed_on_bottom: false,
+            incoming: vec![[3, 0], [2, 2], [1, 3]],
+            ..Default::default()
         };
-        let moves =
-            vec![RotateCcw, RotateCcw, RotateCcw, RotateCcw, MoveRight, MoveRight, MoveRight];
-        println!("{}", frame);
-        for command in moves {
-            println!("Running command: {:?}", command);
-            frame = frame.try_command(command).unwrap();
+        // let moves =
+        //     vec![RotateCcw, RotateCcw, RotateCcw, RotateCcw, MoveRight, MoveRight, MoveRight];
+        // println!("{}", frame);
+        for _ in 0..4 {
+            // println!("Running command: {:?}", command);
+            frame = frame.force_sonic_drop();
             println!("{}", frame);
+            frame = frame.lock_piece().unwrap();
+            println!("{}", frame)
         }
     }
 }

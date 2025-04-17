@@ -14,9 +14,11 @@ use crate::{
     game::frame::Frame,
 };
 
-const LOOKAHEAD_DEPTH: usize = 7; // # pieces in queue being considered (0 = only current)
-const DEPTH_ZERO_SIZE: usize = 10;
-const BRANCHING_FACTOR: usize = 3; // not actually branching. # every depth of "tree".
+const LOOKAHEAD_DEPTH: usize = 15; // # pieces in queue being considered (0 = only current, disables rest)
+const DEPTH_ZERO_SIZE: usize = 20; // maybe small number kinda makes bot play safer?
+
+const BRANCHING_FACTOR: usize = 0; //
+const MAX_SEARCH_WIDTH: usize = 12; // essentially makes branching_factor obsolete if not massive
 
 #[derive(Default)]
 pub struct Akirobo {
@@ -25,9 +27,7 @@ pub struct Akirobo {
 
 impl Akirobo {
     pub fn new() -> Self {
-        Akirobo {
-            total_generated_placements: 0,
-        }
+        Akirobo { total_generated_placements: 0 }
     }
 
     pub fn suggest_action(&mut self, genesis: Frame) -> Vec<Command> {
@@ -40,8 +40,9 @@ impl Akirobo {
             array::from_fn(|_| BTreeSet::new());
 
         for placement in action_lookup.keys() {
-            let after_lock = placement.lock_piece();
-            tree_nodes[0].insert(PlacementNode::new(placement, &after_lock, None, &evaluator));
+            if let Some(after_lock) = placement.lock_piece() {
+                tree_nodes[0].insert(PlacementNode::new(placement, &after_lock, None, &evaluator));
+            }
         }
 
         // for each node in previous depth, add BRANCHING_FACTOR new nodes.
@@ -49,36 +50,72 @@ impl Akirobo {
             let (before, after) = tree_nodes.split_at_mut(depth);
             let prev_depth_nodes = &before[depth - 1];
             let curr_depth_nodes = &mut after[0]; // starts empty
-            let filtered = prev_depth_nodes.iter().rev().take(if depth == 1 {
-                DEPTH_ZERO_SIZE
-            } else {
-                BRANCHING_FACTOR * depth
-            });
+            let filtered = match depth {
+                1 => prev_depth_nodes.iter().rev().take(DEPTH_ZERO_SIZE),
+                _ => prev_depth_nodes.iter().rev().take(MAX_SEARCH_WIDTH),
+            };
             for node in filtered {
                 let mut children = BTreeSet::new();
                 for placement in self.move_gen(&node.after_lock) {
-                    let after_lock = placement.lock_piece();
-                    children.insert(PlacementNode::new(
-                        &placement,
-                        &after_lock,
-                        Some(node.clone()),
-                        &evaluator,
-                    ));
+                    if let Some(after_lock) = placement.lock_piece() {
+                        children.insert(PlacementNode::new(
+                            &placement,
+                            &after_lock,
+                            Some(node.clone()),
+                            &evaluator,
+                        ));
+                    }
                 }
-                curr_depth_nodes.append(&mut children);
+                match BRANCHING_FACTOR {
+                    0 => curr_depth_nodes.append(&mut children),
+                    n => curr_depth_nodes.extend(children.into_iter().rev().take(n)),
+                }
             }
         }
 
         let millis = start_time.elapsed().as_millis();
         let total_resulting_frames = tree_nodes.last().unwrap().len();
 
-        let best_node = tree_nodes.last_mut().unwrap().pop_last().unwrap();
-        let path_to_node = best_node.get_path_from_root();
-        let suggestion = action_lookup.get(&path_to_node[0]).unwrap().to_owned();
+        if total_resulting_frames == 0 {
+            println!("{}", genesis);
+            println!("We are doomed :)");
+            for level in tree_nodes.iter_mut().rev() {
+                if !level.is_empty() {
+                    return action_lookup
+                        .get(&level.pop_last().unwrap().get_root_placement())
+                        .unwrap()
+                        .to_owned();
+                }
+            }
+            // death wiggle
+            return vec![
+                Command::SonicLeft,
+                Command::SonicRight,
+                Command::SonicLeft,
+                Command::SonicRight,
+            ];
+        }
 
-        Frame::print_frames(&[path_to_node[0].clone(), path_to_node.last().unwrap().clone()]);
+        println!("Showing top 5 best first moves");
+        Frame::print_frames(
+            &tree_nodes[0].iter().rev().take(5).map(|x| x.placement.clone()).collect::<Vec<_>>(),
+            5,
+        );
+
+        let last_nodes = tree_nodes.last_mut().unwrap();
+        let best1 = last_nodes.pop_last().unwrap();
+        let best1_first = best1.get_root_placement();
+        let suggestion = action_lookup.get(&best1_first).unwrap().to_owned();
+        let best2 = last_nodes.pop_last();
+
+        // println!("Showing: best suggestion, its goal, 2nd  best suggestion, its goal");
+        // Frame::print_frames(&[best1_first.clone(), best1.placement.clone(), best2.get_root_placement(), best2.placement.clone()]);
+        // evaluator.eval(&best1.after_lock, true);
+        // evaluator.eval(&best2.after_lock, true);
+
+
         println!("Suggestion: {:?}", suggestion);
-        evaluator.eval(&path_to_node[0].lock_piece(), true);
+        evaluator.eval(&best1_first.lock_piece().unwrap(), true);
         println!(
             "\"{}\" final frames in {}ms ({:.2}pps)\nGenerated {} total placements\n",
             total_resulting_frames.blue(),
@@ -103,7 +140,6 @@ impl Akirobo {
             vec![Hold, RotateCcw],
             vec![Hold, RotateCcw, RotateCcw],
         ];
-
 
         let mut all_rotations_and_holds = HashMap::new();
         for rotation_set in rotation_sets {
@@ -158,7 +194,6 @@ impl Akirobo {
             vec![Hold, RotateCcw, RotateCcw],
         ];
 
-
         let mut all_rotations_and_holds = HashSet::new();
         for rotation_set in rotation_sets {
             if let Some(rotated_frame) = gen_from.try_commands(&rotation_set) {
@@ -171,8 +206,7 @@ impl Akirobo {
                 let mut translating_frame = frame.clone();
                 while let Some(translated_more) = translating_frame.try_command(direction) {
                     translating_frame = translated_more;
-                    translated_and_soniced
-                        .insert(translating_frame.force_sonic_drop());
+                    translated_and_soniced.insert(translating_frame.force_sonic_drop());
                 }
             }
             translated_and_soniced.insert(frame.force_sonic_drop());
