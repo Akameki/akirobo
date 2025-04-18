@@ -7,11 +7,9 @@ use std::{
 
 use owo_colors::OwoColorize;
 
-use super::evaluation::Evaluate;
 use crate::{
-    bot::{evaluation::default_eval::DefaultEval, searchtree::PlacementNode},
-    botris::types::Command,
-    game::frame::Frame,
+    botris::types::Command, evaluation::default_eval::DefaultEval, searchtree::PlacementNode,
+    tetris_core::frame::Frame,
 };
 
 const LOOKAHEAD_DEPTH: usize = 15; // # pieces in queue being considered (0 = only current, disables rest)
@@ -30,11 +28,11 @@ impl Akirobo {
         Akirobo { total_generated_placements: 0 }
     }
 
-    pub fn suggest_action(&mut self, genesis: Frame) -> Vec<Command> {
-        let start_time = Instant::now();
+    pub fn suggest_action(&mut self, genesis: &Frame) -> Vec<Command> {
+        // let start_time = Instant::now();
         let evaluator = DefaultEval {};
 
-        let action_lookup = self.move_gen_with_action(&genesis);
+        let action_lookup = self.move_gen_with_action(genesis);
 
         let mut tree_nodes: [BTreeSet<Rc<PlacementNode>>; LOOKAHEAD_DEPTH + 1] =
             array::from_fn(|_| BTreeSet::new());
@@ -73,7 +71,7 @@ impl Akirobo {
             }
         }
 
-        let millis = start_time.elapsed().as_millis();
+        // let millis = start_time.elapsed().as_millis();
         let total_resulting_frames = tree_nodes.last().unwrap().len();
 
         if total_resulting_frames == 0 {
@@ -96,39 +94,38 @@ impl Akirobo {
             ];
         }
 
-        println!("Showing top 5 best first moves");
-        Frame::print_frames(
-            &tree_nodes[0].iter().rev().take(5).map(|x| x.placement.clone()).collect::<Vec<_>>(),
-            5,
-        );
+        // println!("Showing top 5 best first moves");
+        // Frame::print_frames(
+        //     &tree_nodes[0].iter().rev().take(5).map(|x| x.placement.clone()).collect::<Vec<_>>(),
+        //     5,
+        // );
 
         let last_nodes = tree_nodes.last_mut().unwrap();
         let best1 = last_nodes.pop_last().unwrap();
         let best1_first = best1.get_root_placement();
         let suggestion = action_lookup.get(&best1_first).unwrap().to_owned();
-        let best2 = last_nodes.pop_last();
+        // let best2 = last_nodes.pop_last();
 
         // println!("Showing: best suggestion, its goal, 2nd  best suggestion, its goal");
         // Frame::print_frames(&[best1_first.clone(), best1.placement.clone(), best2.get_root_placement(), best2.placement.clone()]);
         // evaluator.eval(&best1.after_lock, true);
         // evaluator.eval(&best2.after_lock, true);
 
-
-        println!("Suggestion: {:?}", suggestion);
-        evaluator.eval(&best1_first.lock_piece().unwrap(), true);
-        println!(
-            "\"{}\" final frames in {}ms ({:.2}pps)\nGenerated {} total placements\n",
-            total_resulting_frames.blue(),
-            millis.blue(),
-            1000.0 / millis as f32,
-            self.total_generated_placements,
-        );
+        // println!("Suggestion: {:?}", suggestion);
+        // evaluator.eval(&best1_first.lock_piece().unwrap(), true);
+        // println!(
+        //     "\"{}\" final frames in {}ms ({:.2}pps)\nGenerated {} total placements\n",
+        //     total_resulting_frames.blue(),
+        //     millis.blue(),
+        //     1000.0 / millis as f32,
+        //     self.total_generated_placements,
+        // );
 
         suggestion
     }
 
     /// Generates possible placements for current piece (DOES NOT ADVANCE PIECE)
-    fn move_gen_with_action(&mut self, gen_from: &Frame) -> HashMap<Frame, Vec<Command>> {
+    pub fn move_gen_with_action(&mut self, gen_from: &Frame) -> HashMap<Frame, Vec<Command>> {
         use Command::*;
         let rotation_sets = [
             vec![],
@@ -181,7 +178,7 @@ impl Akirobo {
         generated
     }
 
-    fn move_gen(&mut self, gen_from: &Frame) -> HashSet<Frame> {
+    pub fn move_gen(&mut self, gen_from: &Frame) -> HashSet<Frame> {
         use Command::*;
         let rotation_sets = [
             vec![],

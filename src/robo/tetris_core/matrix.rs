@@ -1,7 +1,4 @@
-use crate::botris::{
-    game_info::BOARD_HEIGHT,
-    types::Board,
-};
+use crate::botris::{game_info::BOARD_HEIGHT, types::Board};
 
 /// index 0 is the bottom of the board
 pub type Matrix = [[bool; 10]; BOARD_HEIGHT];

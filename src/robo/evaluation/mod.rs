@@ -3,7 +3,7 @@ pub mod default_eval;
 
 use ordered_float::OrderedFloat;
 
-use crate::game::frame::Frame;
+use crate::tetris_core::frame::Frame;
 
 pub trait Evaluate {
     fn eval(&self, frame: &Frame, verbose: bool) -> OrderedFloat<f32>;
@@ -18,7 +18,7 @@ impl Evaluate for NoEval {
         }
         OrderedFloat(0.0)
     }
-    
+
     // fn eval(&self, frame: &Frame) -> OrderedFloat<f32> {
     //     self.eval(frame)
     // }

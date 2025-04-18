@@ -7,7 +7,8 @@ use ordered_float::OrderedFloat;
 use owo_colors::OwoColorize;
 
 use super::Evaluate;
-use crate::{botris::game_info::BOARD_HEIGHT, game::frame::Frame};
+use crate::{botris::game_info::BOARD_HEIGHT, tetris_core::frame::Frame};
+// use crate::{botris::game_info:: tetris_core::frame::Frame};
 
 struct DefaultEvalData<'a> {
     frame: &'a Frame,
@@ -230,8 +231,8 @@ impl DefaultEval {
 mod test {
     use super::DefaultEval;
     use crate::{
-        bot::evaluation::{default_eval::DefaultEvalData, Evaluate},
-        game::frame::Frame,
+        evaluation::{default_eval::DefaultEvalData, Evaluate},
+        tetris_core::frame::Frame,
     };
 
     #[test]

@@ -2,10 +2,10 @@ use std::net::TcpStream;
 
 
 use owo_colors::OwoColorize;
+use robo::botris::types::Command;
 use tungstenite::{connect, stream::MaybeTlsStream, WebSocket};
 
-use super::types::Command;
-use crate::botris::api_messages::BotrisMsg;
+use crate::api_messages::BotrisMsg;
 
 pub struct BotrisWebSocket {
     ws: WebSocket<MaybeTlsStream<TcpStream>>,

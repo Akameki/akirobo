@@ -3,7 +3,7 @@ use std::{f32, rc::Rc};
 use ordered_float::OrderedFloat;
 
 use super::evaluation::Evaluate;
-use crate::game::frame::Frame;
+use crate::tetris_core::frame::Frame;
 
 pub struct PlacementNode {
     /// Frames that have confirmed_on_bottom as true.

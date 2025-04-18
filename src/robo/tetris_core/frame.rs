@@ -292,7 +292,7 @@ impl Frame {
                 }
             }
         }
-
+        // dbg!((&self.queue, &self.falling_piece));
         if Self::collides_with_board(&new_matrix, &FallingPiece::new(self.queue[0])) {
             return None;
         }
@@ -304,7 +304,7 @@ impl Frame {
             falling_piece: FallingPiece::new(self.queue[0]),
             can_hold: true,
             combo: if cleared > 0 { self.combo + 1 } else { 0 },
-            b2b: (self.b2b && cleared == 0 ) || cleared == 4 || all_spin,
+            b2b: (self.b2b && cleared == 0) || cleared == 4 || all_spin,
             stored_attack: self.stored_attack + this_attack,
             incoming: new_incoming,
             simulated_garbage: self.simulated_garbage + additional_garbage,
@@ -412,7 +412,7 @@ mod test {
     use super::Frame;
     use crate::{
         botris::types::{Command::*, Piece},
-        game::piece::FallingPiece,
+        tetris_core::piece::FallingPiece,
     };
 
     #[test]
