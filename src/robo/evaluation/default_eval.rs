@@ -7,25 +7,28 @@ use ordered_float::OrderedFloat;
 use owo_colors::OwoColorize;
 
 use super::Evaluate;
-use crate::{botris::game_info::BOARD_HEIGHT, tetris_core::frame::Frame};
-// use crate::{botris::game_info:: tetris_core::frame::Frame};
+use crate::{
+    botris::game_info::BOARD_HEIGHT,
+    tetris_core::engine::{Board, BoardData},
+};
 
 struct DefaultEvalData<'a> {
-    frame: &'a Frame,
+    board: &'a Board,
+    board_data: &'a BoardData,
     heights: [i32; 10],
-    max_height: usize,
+    stack_height: usize,
 }
 // impl Default for DefaultEvalData<'a> {
 //     fn default() -> Self {
-//         Self { frame: &, heights: heights: [0; 10], max_height: 999 }
+//         Self { board: &, heights: heights: [0; 10], max_height: 999 }
 //     }
 // }
 
 pub struct DefaultEval {}
 impl Evaluate for DefaultEval {
-    fn eval(&self, frame: &Frame, verbose: bool) -> OrderedFloat<f32> {
+    fn eval(&self, board: &Board, board_data: &BoardData, verbose: bool) -> OrderedFloat<f32> {
         let mut eval = 0.0;
-        let mut data = DefaultEvalData { frame, heights: [0; 10], max_height: 99 };
+        let mut data = DefaultEvalData { board, board_data, heights: [0; 10], stack_height: 99 };
         for (eval_fn, weight, name) in Self::SETTINGS {
             let score = eval_fn(&mut data);
             let weighted = score * weight;
@@ -44,8 +47,8 @@ impl Evaluate for DefaultEval {
 impl DefaultEval {
     const SETTINGS: [(fn(&mut DefaultEvalData) -> f32, f32, &str); 8] = [
         (Self::bumpy, 0.3, "bumpy"),
-        (Self::b2b, 3.0, "b2b"),
-        (Self::attack, 0.3, "attack"),
+        (Self::combob2b, 0.5, "combob2b"),
+        (Self::attack, 1.0, "attack"),
         (Self::height, 1.0, "height"),
         (Self::avg_height, 0.0, "a_height"),
         (Self::holes, 3.0, "holes"),
@@ -54,23 +57,22 @@ impl DefaultEval {
     ];
 
     // includes covered bumpiness !!!
-    fn bumpy(data: &mut DefaultEvalData) -> f32 {
-        let frame = data.frame;
+    fn bumpy(DefaultEvalData { board, heights, stack_height, .. }: &mut DefaultEvalData) -> f32 {
         let mut score = 0;
 
-        let mut counting_left: [bool; 10] = array::from_fn(|x| !frame.matrix[0][x]);
-        let mut counting_right: [bool; 10] = array::from_fn(|x| !frame.matrix[0][x]);
+        let mut counting_left: [bool; 10] = array::from_fn(|x| !board[0][x]);
+        let mut counting_right: [bool; 10] = array::from_fn(|x| !board[0][x]);
         counting_left[0] = false;
         counting_right[9] = false;
 
         for y in 0..BOARD_HEIGHT {
             for x in 0..=9 {
                 if x > 0 {
-                    if y > 0 && frame.matrix[y - 1][x - 1] && !frame.matrix[y][x - 1] {
+                    if y > 0 && board[y - 1][x - 1] && !board[y][x - 1] {
                         counting_right[x - 1] = true;
                     }
                     if counting_right[x - 1] {
-                        if frame.matrix[y][x - 1] || !frame.matrix[y][x] {
+                        if board[y][x - 1] || !board[y][x] {
                             counting_right[x - 1] = false;
                         } else {
                             score -= 1;
@@ -78,11 +80,11 @@ impl DefaultEval {
                     }
                 }
                 if x < 9 {
-                    if y > 0 && frame.matrix[y - 1][x + 1] && !frame.matrix[y][x + 1] {
+                    if y > 0 && board[y - 1][x + 1] && !board[y][x + 1] {
                         counting_left[x + 1] = true;
                     }
                     if counting_left[x + 1] {
-                        if frame.matrix[y][x + 1] || !frame.matrix[y][x] {
+                        if board[y][x + 1] || !board[y][x] {
                             counting_left[x + 1] = false;
                         } else {
                             score -= 1;
@@ -90,35 +92,34 @@ impl DefaultEval {
                     }
                 }
 
-                if frame.matrix[y][x] {
-                    data.heights[x] = y as i32;
+                if board[y][x] {
+                    heights[x] = y as i32;
                 }
             }
         }
 
-        data.max_height = *data.heights.iter().max().unwrap() as usize;
+        *stack_height = *heights.iter().max().unwrap() as usize;
 
         score as f32
     }
 
-    fn b2b(data: &mut DefaultEvalData) -> f32 {
-        let frame = data.frame;
-        if frame.b2b {
-            1.0
-        } else {
-            0.0
+    fn combob2b(DefaultEvalData { board_data, .. }: &mut DefaultEvalData) -> f32 {
+        let mut score = 0;
+        // score += board_data.combo;
+        if board_data.b2b {
+            score += 1;
         }
+        score as f32
     }
-    fn attack(data: &mut DefaultEvalData) -> f32 {
-        let frame = data.frame;
+    fn attack(DefaultEvalData { board_data, .. }: &mut DefaultEvalData) -> f32 {
         let mut score = 0.0;
-        score += frame.stored_attack as f32;
+        score += board_data.cummulative_attack as f32;
         score
     }
 
     // high board = bad !
-    fn height(data: &mut DefaultEvalData) -> f32 {
-        match data.max_height {
+    fn height(DefaultEvalData { stack_height, .. }: &mut DefaultEvalData) -> f32 {
+        match stack_height {
             0 => 0.0,
             1 => 0.0,
             2 => 0.0,
@@ -140,8 +141,8 @@ impl DefaultEval {
         }
     }
 
-    fn avg_height(data: &mut DefaultEvalData) -> f32 {
-        // let avg_height = data.heights.iter().sum::<i32>() as f32 / 10.0;
+    fn avg_height(DefaultEvalData { heights, .. }: &mut DefaultEvalData) -> f32 {
+        // let avg_height = heights.iter().sum::<i32>() as f32 / 10.0;
         // match avg_height {
         //     h if h <= 4.0 => h - 4.0,
         //     h if h <= 6.0 => 4.0 - h,
@@ -151,13 +152,12 @@ impl DefaultEval {
     }
     // block over (contiguous) space = bad!
     // TODO: calculate at same time as other evals
-    fn holes(data: &mut DefaultEvalData) -> f32 {
-        let frame = data.frame;
+    fn holes(DefaultEvalData { board, .. }: &mut DefaultEvalData) -> f32 {
         let mut score = 0.0;
         for x in 0..10 {
             let mut hole_present = 0.0;
-            for y in 0..frame.matrix.len() {
-                if frame.matrix[y][x] {
+            for y in 0..board.len() {
+                if board[y][x] {
                     if hole_present == 0.0 {
                         continue;
                     }
@@ -178,23 +178,24 @@ impl DefaultEval {
     }
 
     // garbage = bad!
-    fn garbage(data: &mut DefaultEvalData) -> f32 {
-        -(data.frame.simulated_garbage as f32)
+    fn garbage(DefaultEvalData { board_data, .. }: &mut DefaultEvalData) -> f32 {
+        -(board_data.simulated_garbage as f32)
+
     }
 
     // stacks with 1 wide wells are bad! except maybe 9-0 :p
-    fn depends(data: &mut DefaultEvalData) -> f32 {
+    fn depends(DefaultEvalData { heights, .. }: &mut DefaultEvalData) -> f32 {
         let mut score = 0.0;
         for x in 1..=8 {
-            score += match max(min(data.heights[x - 1], data.heights[x + 1]) - data.heights[x], 0) {
+            score += match max(min(heights[x - 1], heights[x + 1]) - heights[x], 0) {
                 0 | 1 => 0.0,
                 2 => -1.0,
                 3 | 4 => -2.0,
                 n => -(n as f32 - 2.5),
             }
         }
-        let col1 = max(data.heights[1] - data.heights[0], 0);
-        let col10 = max(data.heights[8] - data.heights[9], 0);
+        let col1 = max(heights[1] - heights[0], 0);
+        let col10 = max(heights[8] - heights[9], 0);
         for h in [col1, col10] {
             score += match h {
                 0 => 0.0,
@@ -204,27 +205,8 @@ impl DefaultEval {
                 n => -(n as f32 - 2.5),
             }
         }
-
         score
     }
-
-    // col 1
-    // let mut counting = !frame.matrix[0][0];
-    // for y in 0..BOARD_HEIGHT {
-    //     // if we are at an empty space above a block, we add the heights of walls next to us.
-    //     if y > 0 && frame.matrix[y-1][0] && !frame.matrix[y][0] {
-    //         counting = true;
-    //     }
-    //     // we stop counting if we hit a block (impossible when same iter as start counting)
-    //     // or stop counting if we made it over a neighbor's wall
-    //     if counting {
-    //         if frame.matrix[y][0] || !frame.matrix[y][1] {
-    //             counting = false;
-    //         } else {
-    //             score += 1;
-    //         }
-    //     }
-    // }
 }
 
 #[cfg(test)]
@@ -232,13 +214,13 @@ mod test {
     use super::DefaultEval;
     use crate::{
         evaluation::{default_eval::DefaultEvalData, Evaluate},
-        tetris_core::frame::Frame,
+        tetris_core::engine::{print_board, strs_to_board, BoardData},
     };
 
     #[test]
     fn test_evals() {
         // 40
-        // let frame0 = Frame::from_strings(vec![
+        // let board0 = board::from_strings(vec![
         //     "    []  []  []  [][]".to_string(),
         //     "  []  []  []    []  ".to_string(),
         //     "[]  []  []  []  []  ".to_string(),
@@ -246,7 +228,7 @@ mod test {
         //     "  []  []  []  [][][]".to_string(),
         //     "[][]    [][][][][]  ".to_string(),
         // ]);
-        let frame = Frame::from_strings(&[
+        let board = strs_to_board(&[
             "[][]  [][][][][][][]",
             "[]        [][][][][]",
             "[][]  [][][][]  [][]",
@@ -254,21 +236,22 @@ mod test {
             "  [][][][][]    [][]",
             "[][][][][][][]  [][]",
         ]);
-        println!("{}", frame);
+        // print_board(&board);
         assert_eq!(
             DefaultEval::bumpy(&mut DefaultEvalData {
-                frame: &frame,
+                board: &board,
+                board_data: &BoardData::default(),
                 heights: [0; 10],
-                max_height: 99
+                stack_height: 99,
             }),
-            11.0
+            -11.0
         )
     }
 
     #[test]
     fn compare_evals() {
-        // should "manually" clear lines by commenting.
-        let frame1 = Frame::from_strings(&[
+        // don't forget to "manually" clear lines (by simpling commenting)
+        let board1 = strs_to_board(&[
             "                    ",
             "                    ",
             "        ██          ",
@@ -277,15 +260,16 @@ mod test {
             "      [][]          ",
             "        [][]        ",
         ]);
-        let frame2 = Frame::from_strings(&[
+        let board2 = strs_to_board(&[
             "                    ",
             "      [][]  ██      ",
             "        [][]██████  ",
         ]);
+        let board_data = BoardData::default();
         let eval = DefaultEval {};
-        println!("{}", frame1);
-        eval.eval(&frame1, true);
-        println!("{}", frame2);
-        eval.eval(&frame2, true);
+        print_board(&board1);
+        eval.eval(&board1, &board_data, true);
+        print_board(&board2);
+        eval.eval(&board2, &board_data, true);
     }
 }

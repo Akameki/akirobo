@@ -4,7 +4,7 @@ pub mod websocket;
 use api_messages::BotrisMsg;
 use dotenv::{dotenv, var};
 use owo_colors::OwoColorize;
-use robo::{akirobo::Akirobo, botris::types::Command, tetris_core::frame::Frame};
+use robo::{akirobo::Akirobo, botris::types::Command, tetris_core::snapshot::GameSnapshot};
 use websocket::BotrisWebSocket;
 
 // #[tokio::main]
@@ -28,13 +28,12 @@ fn main() {
             use BotrisMsg::*;
             match message {
                 RequestMove { game_state, .. } => {
-                    // println!("{:?}", game_state.garbage_queued);
                     let mut akirobo = Akirobo::new();
                     if game_state.held.is_none() {
                         println!("Holding first piece!");
                         ws.send_actions(vec![Command::Hold])
                     } else {
-                        let commands = akirobo.suggest_action(&Frame::from_state(&game_state));
+                        let commands = akirobo.suggest_action(&GameSnapshot::from_state(&game_state));
                         ws.send_actions(commands);
                     }
                 }

@@ -1,6 +1,6 @@
 use std::{
     array,
-    collections::{BTreeSet, HashMap, HashSet},
+    collections::{BTreeSet, HashMap},
     rc::Rc,
     time::Instant,
 };
@@ -8,39 +8,73 @@ use std::{
 use owo_colors::OwoColorize;
 
 use crate::{
-    botris::types::Command, evaluation::default_eval::DefaultEval, searchtree::PlacementNode,
-    tetris_core::frame::Frame,
+    botris::types::Command,
+    evaluation::{default_eval::DefaultEval, Evaluate},
+    movegen::{move_gen, move_gen_with_action},
+    searchtree::{print_nodes, EvaledPlacementNode},
+    tetris_core::{
+        engine::{print_board, BoardData},
+        snapshot::GameSnapshot,
+    },
 };
 
-const LOOKAHEAD_DEPTH: usize = 15; // # pieces in queue being considered (0 = only current, disables rest)
-const DEPTH_ZERO_SIZE: usize = 20; // maybe small number kinda makes bot play safer?
+const LOOKAHEAD_DEPTH: usize = 6; // # pieces in queue being considered (0 = only current, disables rest)
+const DEPTH_ZERO_SIZE: usize = 30; // maybe small number kinda makes bot play safer?
 
-const BRANCHING_FACTOR: usize = 0; //
-const MAX_SEARCH_WIDTH: usize = 12; // essentially makes branching_factor obsolete if not massive
+const BRANCHING_FACTOR: usize = 0; // if nonzero, use a large search width
+const MAX_SEARCH_WIDTH: usize = 500;
+
+// expect ~ pow(BRANCHING_FACTOR, LOOKAHEAD) leaves at final depth, or MAX_SEARCH_WIDTH.
 
 #[derive(Default)]
-pub struct Akirobo {
-    total_generated_placements: usize,
-}
+pub struct Akirobo {}
 
 impl Akirobo {
     pub fn new() -> Self {
-        Akirobo { total_generated_placements: 0 }
+        Akirobo {}
     }
 
-    pub fn suggest_action(&mut self, genesis: &Frame) -> Vec<Command> {
-        // let start_time = Instant::now();
+    pub fn suggest_action(&mut self, genesis: &GameSnapshot) -> Vec<Command> {
+        let start_time = Instant::now();
         let evaluator = DefaultEval {};
 
-        let action_lookup = self.move_gen_with_action(genesis);
+        let genesis_board = genesis.matrix;
+        let genesis_data = BoardData {
+            b2b: genesis.b2b,
+            combo: genesis.combo,
+            cummulative_attack: 0,
+            incoming: genesis.incoming_garbage,
+            simulated_garbage: 0,
+        };
+        let first_piece = genesis.falling_piece.piece;
 
-        let mut tree_nodes: [BTreeSet<Rc<PlacementNode>>; LOOKAHEAD_DEPTH + 1] =
+        let mut tree_nodes: [BTreeSet<Rc<EvaledPlacementNode>>; LOOKAHEAD_DEPTH + 1] =
             array::from_fn(|_| BTreeSet::new());
 
-        for placement in action_lookup.keys() {
-            if let Some(after_lock) = placement.lock_piece() {
-                tree_nodes[0].insert(PlacementNode::new(placement, &after_lock, None, &evaluator));
-            }
+        let mut action_lookup = HashMap::new();
+        for (placement, action) in move_gen_with_action(&genesis_board, first_piece) {
+            tree_nodes[0].insert(EvaledPlacementNode::new(
+                &genesis_board,
+                placement,
+                genesis.held,
+                None,
+                Some(genesis_data),
+                &evaluator,
+            ));
+            action_lookup.insert(placement, action);
+        }
+        // TODO: definitely need some refactoring...
+        for (placement, mut action) in move_gen_with_action(&genesis_board, genesis.held) {
+            tree_nodes[0].insert(EvaledPlacementNode::new(
+                &genesis_board,
+                placement,
+                first_piece,
+                None,
+                Some(genesis_data),
+                &evaluator,
+            ));
+            action.insert(0, Command::Hold);
+            action_lookup.insert(placement, action);
         }
 
         // for each node in previous depth, add BRANCHING_FACTOR new nodes.
@@ -54,15 +88,25 @@ impl Akirobo {
             };
             for node in filtered {
                 let mut children = BTreeSet::new();
-                for placement in self.move_gen(&node.after_lock) {
-                    if let Some(after_lock) = placement.lock_piece() {
-                        children.insert(PlacementNode::new(
-                            &placement,
-                            &after_lock,
-                            Some(node.clone()),
-                            &evaluator,
-                        ));
-                    }
+                for placement in move_gen(&node.board_after_clears, genesis.queue[depth - 1]) {
+                    children.insert(EvaledPlacementNode::new(
+                        &node.board_after_clears,
+                        placement,
+                        node.held,
+                        Some(node.clone()),
+                        None,
+                        &evaluator,
+                    ));
+                }
+                for placement in move_gen(&node.board_after_clears, node.held) {
+                    children.insert(EvaledPlacementNode::new(
+                        &node.board_after_clears,
+                        placement,
+                        genesis.queue[depth - 1],
+                        Some(node.clone()),
+                        None,
+                        &evaluator,
+                    ));
                 }
                 match BRANCHING_FACTOR {
                     0 => curr_depth_nodes.append(&mut children),
@@ -71,11 +115,11 @@ impl Akirobo {
             }
         }
 
-        // let millis = start_time.elapsed().as_millis();
-        let total_resulting_frames = tree_nodes.last().unwrap().len();
+        let millis = start_time.elapsed().as_millis();
+        let last_depth_frames = tree_nodes.last().unwrap().len();
 
-        if total_resulting_frames == 0 {
-            println!("{}", genesis);
+        if last_depth_frames == 0 {
+            print_board(&genesis_board);
             println!("We are doomed :)");
             for level in tree_nodes.iter_mut().rev() {
                 if !level.is_empty() {
@@ -94,162 +138,31 @@ impl Akirobo {
             ];
         }
 
-        // println!("Showing top 5 best first moves");
-        // Frame::print_frames(
-        //     &tree_nodes[0].iter().rev().take(5).map(|x| x.placement.clone()).collect::<Vec<_>>(),
-        //     5,
-        // );
-
         let last_nodes = tree_nodes.last_mut().unwrap();
-        let best1 = last_nodes.pop_last().unwrap();
-        let best1_first = best1.get_root_placement();
-        let suggestion = action_lookup.get(&best1_first).unwrap().to_owned();
-        // let best2 = last_nodes.pop_last();
+        let best_node = last_nodes.pop_last().unwrap();
+        let best_node_root = best_node.get_root();
+        let suggestion = action_lookup.get(&best_node_root.placement).unwrap().to_owned();
 
-        // println!("Showing: best suggestion, its goal, 2nd  best suggestion, its goal");
-        // Frame::print_frames(&[best1_first.clone(), best1.placement.clone(), best2.get_root_placement(), best2.placement.clone()]);
-        // evaluator.eval(&best1.after_lock, true);
-        // evaluator.eval(&best2.after_lock, true);
+        
+        // println!("Showing: all first moves");
+        // print_nodes(tree_nodes[0].iter().rev().collect::<Vec<_>>(), 5);
 
-        // println!("Suggestion: {:?}", suggestion);
-        // evaluator.eval(&best1_first.lock_piece().unwrap(), true);
-        // println!(
-        //     "\"{}\" final frames in {}ms ({:.2}pps)\nGenerated {} total placements\n",
-        //     total_resulting_frames.blue(),
-        //     millis.blue(),
-        //     1000.0 / millis as f32,
-        //     self.total_generated_placements,
-        // );
+        println!("Showing: best suggestion and its vision");
+        let mut nodes_to_print =
+            best_node.get_nodes_from_root().into_iter().take(3).collect::<Vec<_>>();
+        nodes_to_print.push(best_node);
+        print_nodes(&nodes_to_print, 5);
+
+        println!("Suggestion: {:?}", suggestion);
+        evaluator.eval(&best_node_root.board_after_clears, &best_node_root.board_data, true);
+        println!(
+            "{} placements at final depth in {}ms ({:.2}pps)",
+            last_depth_frames,
+            millis.blue(),
+            1000.0 / millis as f32,
+        );
+        println!("       {}", " = ".repeat(15).black().on_bright_white());
 
         suggestion
     }
-
-    /// Generates possible placements for current piece (DOES NOT ADVANCE PIECE)
-    pub fn move_gen_with_action(&mut self, gen_from: &Frame) -> HashMap<Frame, Vec<Command>> {
-        use Command::*;
-        let rotation_sets = [
-            vec![],
-            vec![RotateCw],
-            vec![RotateCcw],
-            vec![RotateCcw, RotateCcw],
-            vec![Hold],
-            vec![Hold, RotateCw],
-            vec![Hold, RotateCcw],
-            vec![Hold, RotateCcw, RotateCcw],
-        ];
-
-        let mut all_rotations_and_holds = HashMap::new();
-        for rotation_set in rotation_sets {
-            if let Some(rotated_frame) = gen_from.try_commands(&rotation_set) {
-                all_rotations_and_holds.insert(rotated_frame, rotation_set);
-            }
-        }
-        let mut translated_and_soniced = HashMap::new();
-        for (frame, action) in all_rotations_and_holds {
-            for direction in [MoveLeft, MoveRight] {
-                let mut translating_frame = frame.clone();
-                let mut translating_action = action.clone();
-                while let Some(translated_more) = translating_frame.try_command(direction) {
-                    translating_action.push(direction);
-                    translating_frame = translated_more;
-                    translated_and_soniced
-                        .insert(translating_frame.force_sonic_drop(), translating_action.clone());
-                }
-            }
-            translated_and_soniced.insert(frame.force_sonic_drop(), action);
-        }
-
-        let mut generated = translated_and_soniced.clone();
-
-        for (frame, action) in translated_and_soniced {
-            for spin in [RotateCcw, RotateCw] {
-                if let Some(mut spun) = frame.try_command(spin) {
-                    spun = spun.force_sonic_drop();
-                    generated.entry(spun).or_insert_with(|| {
-                        let mut spun_action = action.clone();
-                        spun_action.push(SonicDrop); // REMEMBER this if refactored
-                        spun_action.push(spin);
-                        spun_action
-                    });
-                }
-            }
-        }
-
-        generated
-    }
-
-    pub fn move_gen(&mut self, gen_from: &Frame) -> HashSet<Frame> {
-        use Command::*;
-        let rotation_sets = [
-            vec![],
-            vec![RotateCw],
-            vec![RotateCcw],
-            vec![RotateCcw, RotateCcw],
-            vec![Hold],
-            vec![Hold, RotateCw],
-            vec![Hold, RotateCcw],
-            vec![Hold, RotateCcw, RotateCcw],
-        ];
-
-        let mut all_rotations_and_holds = HashSet::new();
-        for rotation_set in rotation_sets {
-            if let Some(rotated_frame) = gen_from.try_commands(&rotation_set) {
-                all_rotations_and_holds.insert(rotated_frame);
-            }
-        }
-        let mut translated_and_soniced = HashSet::new();
-        for frame in all_rotations_and_holds {
-            for direction in [MoveLeft, MoveRight] {
-                let mut translating_frame = frame.clone();
-                while let Some(translated_more) = translating_frame.try_command(direction) {
-                    translating_frame = translated_more;
-                    translated_and_soniced.insert(translating_frame.force_sonic_drop());
-                }
-            }
-            translated_and_soniced.insert(frame.force_sonic_drop());
-        }
-
-        let mut generated = translated_and_soniced.clone();
-
-        for frame in translated_and_soniced {
-            for spin in [RotateCcw, RotateCw] {
-                if let Some(mut spun) = frame.try_command(spin) {
-                    spun = spun.force_sonic_drop();
-                    generated.insert(spun);
-                }
-            }
-        }
-
-        generated
-    }
 }
-
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use crate::{
-//         botris::types::Piece,
-//         game::piece::FallingPiece,
-//     };
-
-//     #[test]
-//     fn test_move_gen() {
-//         let mut akirobo = Akirobo::new();
-//         let piece = FallingPiece::new(Piece::I);
-//         let frame = Frame {
-//             falling_piece: todo!(),
-//             queue: todo!(),
-//             held: todo!(),
-//             can_hold: todo!(),
-//             combo: todo!(),
-//             b2b: todo!(),
-//             stored_attack: todo!(),
-//             confirmed_on_bottom: todo!(),
-//             depth: todo!(),
-//             matrix: todo!(),
-//         };
-//         let generated = akirobo.move_gen_with_action(&frame);
-//         assert!(!generated.is_empty());
-//         println!("{:?}", generated);
-//     }
-// }

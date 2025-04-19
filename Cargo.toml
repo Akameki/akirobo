@@ -12,7 +12,11 @@ name = "botris"
 path = "src/botris/main.rs"
 
 [[bench]]
-name = "citrus_bench"
+name = "movegen"
+harness = false
+
+[[bench]]
+name = "compare_movegen"
 harness = false
 
 [dependencies]

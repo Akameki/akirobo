@@ -100,12 +100,12 @@ impl Piece {
 
 pub type PieceCoords = [(i8, i8); 4]; // can be use relative or absolute
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FallingPiece {
+    pub rotation: usize,
     pub piece: Piece,
     pub y: i8,
     pub x: i8,
-    pub rotation: usize,
 }
 
 impl FallingPiece {
@@ -113,7 +113,7 @@ impl FallingPiece {
         FallingPiece { piece, y: 17, x: 3, rotation: 0 }
     }
 
-    pub fn relative(&self) -> PieceCoords {
+    fn relative(&self) -> PieceCoords {
         self.piece.rotations()[self.rotation]
     }
 

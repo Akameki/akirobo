@@ -1,7 +1,7 @@
 use super::types::{ClearName, ClearName::*};
 
 pub const BOARD_WIDTH: usize = 10;
-pub const BOARD_HEIGHT: usize = 25;
+pub const BOARD_HEIGHT: usize = 30;
 
 impl ClearName {
     pub fn attack(self) -> u32 {
