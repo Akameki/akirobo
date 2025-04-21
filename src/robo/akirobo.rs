@@ -12,10 +12,7 @@ use crate::{
     evaluation::{default_eval::DefaultEval, Evaluate},
     movegen::{move_gen, move_gen_with_action},
     searchtree::{print_nodes, EvaledPlacementNode},
-    tetris_core::{
-        engine::{print_board, BoardData},
-        snapshot::GameSnapshot,
-    },
+    tetris_core::{engine::BoardData, snapshot::GameSnapshot},
 };
 
 const LOOKAHEAD_DEPTH: usize = 6; // # pieces in queue being considered (0 = only current, disables rest)
@@ -119,7 +116,7 @@ impl Akirobo {
         let last_depth_frames = tree_nodes.last().unwrap().len();
 
         if last_depth_frames == 0 {
-            print_board(&genesis_board);
+            genesis_board.print_board(None);
             println!("We are doomed :)");
             for level in tree_nodes.iter_mut().rev() {
                 if !level.is_empty() {
@@ -143,7 +140,6 @@ impl Akirobo {
         let best_node_root = best_node.get_root();
         let suggestion = action_lookup.get(&best_node_root.placement).unwrap().to_owned();
 
-        
         // println!("Showing: all first moves");
         // print_nodes(tree_nodes[0].iter().rev().collect::<Vec<_>>(), 5);
 

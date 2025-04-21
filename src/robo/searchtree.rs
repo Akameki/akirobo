@@ -1,19 +1,18 @@
 use std::{f32, rc::Rc};
 
 use ordered_float::OrderedFloat;
-use owo_colors::OwoColorize;
 
 use super::evaluation::Evaluate;
 use crate::{
     botris::types::Piece,
     movegen::Placement,
-    tetris_core::engine::{hard_drop, Board, BoardData},
+    tetris_core::engine::{BitBoard, BoardData},
 };
 
 pub struct EvaledPlacementNode {
-    pub board: Board,
+    pub board: BitBoard,
     pub placement: Placement,
-    pub board_after_clears: Board,
+    pub board_after_clears: BitBoard,
     pub board_data: BoardData,
     pub held: Piece, // not sure where this should belong yet.
     // pub cumm_attack: u32, // not sure where this should belong yet.
@@ -24,7 +23,7 @@ pub struct EvaledPlacementNode {
 
 impl EvaledPlacementNode {
     pub fn new(
-        board: &Board,
+        board: &BitBoard,
         placement: Placement,
         held: Piece,
         parent: Option<Rc<EvaledPlacementNode>>,
@@ -34,14 +33,14 @@ impl EvaledPlacementNode {
         // calculate lines and clear data
         let mut filled_board = *board;
         for (y, x) in placement.piece_location {
-            filled_board[y as usize][x as usize] = true;
+            filled_board.set(y as usize, x as usize, true);
         }
         let data = if let Some(parent) = &parent {
             parent.board_data
         } else {
             board_data_if_root.unwrap()
         };
-        let (board_after_clears, board_data) = hard_drop(&filled_board, placement.all_spin, data);
+        let (board_after_clears, board_data) = filled_board.hard_drop(placement.all_spin, data);
 
         Rc::new(EvaledPlacementNode {
             score: evaluator.eval(&board_after_clears, &board_data, false),
@@ -63,7 +62,7 @@ impl EvaledPlacementNode {
         self.parent.as_ref().map_or(self.placement, |p| p.get_root_placement())
     }
 
-    pub fn get_placements_from_root(&self) -> Vec<(Board, Placement)> {
+    pub fn get_placements_from_root(&self) -> Vec<(BitBoard, Placement)> {
         let mut path = vec![(self.board, self.placement)];
         let mut current = self.parent.clone();
         while let Some(node) = current {
@@ -112,28 +111,14 @@ where
     I: IntoIterator<Item = &'a Rc<EvaledPlacementNode>>,
 {
     let nodes: Vec<&Rc<EvaledPlacementNode>> = nodes.into_iter().collect();
-    println!("{}", ">~~~~~~~~~~~~~~~~~~~~<".repeat(std::cmp::min(nodes.len(), chunk_size)));
     for chunk in nodes.chunks(chunk_size) {
-        for y in (0..21).rev() {
-            for rc_node in chunk {
-                let EvaledPlacementNode { board, placement, .. } = &***rc_node;
-                print!("\"");
-                for (x, cell) in board[y].iter().enumerate() {
-                    if placement.piece_location.contains(&(y as i8, x as i8)) {
-                        if placement.all_spin {
-                            print!("{}", "██".fg_rgb::<150, 100, 50>());
-                        } else {
-                            print!("██");
-                        }
-                    } else {
-                        print!("{}", if *cell { "[]" } else { "  " });
-                    }
-                }
-                print!("\"");
-            }
-            println!();
-        }
-        println!("{}", ">~~~~~~~~~~~~~~~~~~~~<".repeat(chunk.len()));
+        BitBoard::print_rows(
+            &chunk
+                .iter()
+                .map(|node| (&node.board_after_clears, Some(node.placement.piece_location)))
+                .collect::<Vec<_>>(),
+            chunk_size,
+        );
         for rc_node in chunk {
             print!(">     eval: {:5.1}    <", rc_node.score);
         }

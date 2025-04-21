@@ -9,11 +9,11 @@ use owo_colors::OwoColorize;
 use super::Evaluate;
 use crate::{
     botris::game_info::BOARD_HEIGHT,
-    tetris_core::engine::{Board, BoardData},
+    tetris_core::engine::{BitBoard, BoardData, BITBOARD_HEIGHT},
 };
 
 struct DefaultEvalData<'a> {
-    board: &'a Board,
+    board: &'a BitBoard,
     board_data: &'a BoardData,
     heights: [i32; 10],
     stack_height: usize,
@@ -26,9 +26,14 @@ struct DefaultEvalData<'a> {
 
 pub struct DefaultEval {}
 impl Evaluate for DefaultEval {
-    fn eval(&self, board: &Board, board_data: &BoardData, verbose: bool) -> OrderedFloat<f32> {
+    fn eval(&self, board: &BitBoard, board_data: &BoardData, verbose: bool) -> OrderedFloat<f32> {
         let mut eval = 0.0;
-        let mut data = DefaultEvalData { board, board_data, heights: [0; 10], stack_height: 99 };
+        let mut data = DefaultEvalData {
+            board,
+            board_data,
+            heights: std::array::from_fn(|col| board.column_height(col) as i32),
+            stack_height: board.stack_height(),
+        };
         for (eval_fn, weight, name) in Self::SETTINGS {
             let score = eval_fn(&mut data);
             let weighted = score * weight;
@@ -45,6 +50,7 @@ impl Evaluate for DefaultEval {
 }
 
 impl DefaultEval {
+    #[allow(clippy::type_complexity)]
     const SETTINGS: [(fn(&mut DefaultEvalData) -> f32, f32, &str); 8] = [
         (Self::bumpy, 0.3, "bumpy"),
         (Self::combob2b, 0.5, "combob2b"),
@@ -56,23 +62,25 @@ impl DefaultEval {
         (Self::depends, 1.0, "depends"),
     ];
 
+    // TODO: take advantage of bitboard !
+
     // includes covered bumpiness !!!
-    fn bumpy(DefaultEvalData { board, heights, stack_height, .. }: &mut DefaultEvalData) -> f32 {
+    fn bumpy(DefaultEvalData { board, .. }: &mut DefaultEvalData) -> f32 {
         let mut score = 0;
 
-        let mut counting_left: [bool; 10] = array::from_fn(|x| !board[0][x]);
-        let mut counting_right: [bool; 10] = array::from_fn(|x| !board[0][x]);
+        let mut counting_left: [bool; 10] = array::from_fn(|x| !board.at(0, x));
+        let mut counting_right: [bool; 10] = array::from_fn(|x| !board.at(0, x));
         counting_left[0] = false;
         counting_right[9] = false;
 
         for y in 0..BOARD_HEIGHT {
             for x in 0..=9 {
                 if x > 0 {
-                    if y > 0 && board[y - 1][x - 1] && !board[y][x - 1] {
+                    if y > 0 && board.at(y - 1, x - 1) && !board.at(y, x - 1) {
                         counting_right[x - 1] = true;
                     }
                     if counting_right[x - 1] {
-                        if board[y][x - 1] || !board[y][x] {
+                        if board.at(y, x - 1) || !board.at(y, x) {
                             counting_right[x - 1] = false;
                         } else {
                             score -= 1;
@@ -80,25 +88,19 @@ impl DefaultEval {
                     }
                 }
                 if x < 9 {
-                    if y > 0 && board[y - 1][x + 1] && !board[y][x + 1] {
+                    if y > 0 && board.at(y - 1, x + 1) && !board.at(y, x + 1) {
                         counting_left[x + 1] = true;
                     }
                     if counting_left[x + 1] {
-                        if board[y][x + 1] || !board[y][x] {
+                        if board.at(y, x + 1) || !board.at(y, x) {
                             counting_left[x + 1] = false;
                         } else {
                             score -= 1;
                         }
                     }
                 }
-
-                if board[y][x] {
-                    heights[x] = y as i32;
-                }
             }
         }
-
-        *stack_height = *heights.iter().max().unwrap() as usize;
 
         score as f32
     }
@@ -141,7 +143,7 @@ impl DefaultEval {
         }
     }
 
-    fn avg_height(DefaultEvalData { heights, .. }: &mut DefaultEvalData) -> f32 {
+    fn avg_height(DefaultEvalData { heights: _, .. }: &mut DefaultEvalData) -> f32 {
         // let avg_height = heights.iter().sum::<i32>() as f32 / 10.0;
         // match avg_height {
         //     h if h <= 4.0 => h - 4.0,
@@ -156,8 +158,8 @@ impl DefaultEval {
         let mut score = 0.0;
         for x in 0..10 {
             let mut hole_present = 0.0;
-            for y in 0..board.len() {
-                if board[y][x] {
+            for y in 0..BITBOARD_HEIGHT {
+                if board.at(y, x) {
                     if hole_present == 0.0 {
                         continue;
                     }
@@ -180,7 +182,6 @@ impl DefaultEval {
     // garbage = bad!
     fn garbage(DefaultEvalData { board_data, .. }: &mut DefaultEvalData) -> f32 {
         -(board_data.simulated_garbage as f32)
-
     }
 
     // stacks with 1 wide wells are bad! except maybe 9-0 :p
@@ -214,7 +215,7 @@ mod test {
     use super::DefaultEval;
     use crate::{
         evaluation::{default_eval::DefaultEvalData, Evaluate},
-        tetris_core::engine::{print_board, strs_to_board, BoardData},
+        tetris_core::engine::{BitBoard, BoardData},
     };
 
     #[test]
@@ -228,7 +229,7 @@ mod test {
         //     "  []  []  []  [][][]".to_string(),
         //     "[][]    [][][][][]  ".to_string(),
         // ]);
-        let board = strs_to_board(&[
+        let board = BitBoard::from_strs(&[
             "[][]  [][][][][][][]",
             "[]        [][][][][]",
             "[][]  [][][][]  [][]",
@@ -251,7 +252,7 @@ mod test {
     #[test]
     fn compare_evals() {
         // don't forget to "manually" clear lines (by simpling commenting)
-        let board1 = strs_to_board(&[
+        let board1 = BitBoard::from_strs(&[
             "                    ",
             "                    ",
             "        ██          ",
@@ -260,16 +261,16 @@ mod test {
             "      [][]          ",
             "        [][]        ",
         ]);
-        let board2 = strs_to_board(&[
+        let board2 = BitBoard::from_strs(&[
             "                    ",
             "      [][]  ██      ",
             "        [][]██████  ",
         ]);
         let board_data = BoardData::default();
         let eval = DefaultEval {};
-        print_board(&board1);
+        board1.print_board(None);
         eval.eval(&board1, &board_data, true);
-        print_board(&board2);
+        board2.print_board(None);
         eval.eval(&board2, &board_data, true);
     }
 }

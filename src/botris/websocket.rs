@@ -1,6 +1,5 @@
 use std::net::TcpStream;
 
-
 use owo_colors::OwoColorize;
 use robo::botris::types::Command;
 use tungstenite::{connect, stream::MaybeTlsStream, WebSocket};

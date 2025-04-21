@@ -2,11 +2,11 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use robo::{
     botris::types::Piece,
     movegen::{move_gen, move_gen_with_action},
-    tetris_core::engine::strs_to_board,
+    tetris_core::engine::BitBoard,
 };
 
 fn bench_fibs(c: &mut Criterion) {
-    let board = strs_to_board(&[
+    let board = BitBoard::from_strs(&[
         "[][]                ",
         "[][][][]    [][][][]",
         "[][][][]      [][][]",

@@ -7,7 +7,7 @@ use crate::botris::types::{GameState, GarbageLine, Piece};
 
 #[derive(Debug, Clone, Eq)]
 pub struct GameSnapshot {
-    pub matrix: Board,
+    pub matrix: BitBoard,
     pub falling_piece: FallingPiece,
     pub queue: Vec<Piece>,
     pub held: Piece,
@@ -53,7 +53,7 @@ impl GameSnapshot {
             queue.extend(random_bag);
         }
 
-        let mut incoming= [0; 8];
+        let mut incoming = [0; 8];
         for GarbageLine { delay } in &game_state.garbage_queued {
             // assume we can play above 2pps
             let delay = delay.as_u64().unwrap() as u32 * 2;

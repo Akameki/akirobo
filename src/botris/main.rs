@@ -33,7 +33,8 @@ fn main() {
                         println!("Holding first piece!");
                         ws.send_actions(vec![Command::Hold])
                     } else {
-                        let commands = akirobo.suggest_action(&GameSnapshot::from_state(&game_state));
+                        let commands =
+                            akirobo.suggest_action(&GameSnapshot::from_state(&game_state));
                         ws.send_actions(commands);
                     }
                 }

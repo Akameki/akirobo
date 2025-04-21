@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use robo::{botris::types::Piece, movegen::move_gen, tetris_core::engine::strs_to_board};
+use robo::{botris::types::Piece, movegen::move_gen, tetris_core::engine::BitBoard};
 
 // use std::time::Instant;
 
@@ -10,7 +10,7 @@ fn benchmark_movegen(c: &mut Criterion) {
     let boards = [
         (
             "BOARD TSPIN",
-            strs_to_board(&[
+            BitBoard::from_strs(&[
                 "                  []",
                 "                  []",
                 "[][]            [][]",
@@ -23,7 +23,7 @@ fn benchmark_movegen(c: &mut Criterion) {
         ),
         (
             "BOARD DT CANNON",
-            strs_to_board(&[
+            BitBoard::from_strs(&[
                 "[][]                ",
                 "[][][][]    [][][][]",
                 "[][][][]      [][][]",
@@ -37,7 +37,7 @@ fn benchmark_movegen(c: &mut Criterion) {
         ),
         (
             "BOARD TERRIBLE",
-            strs_to_board(&[
+            BitBoard::from_strs(&[
                 "    [][][][][][][][]",
                 "    [][][][][][][][]",
                 "                  []",
