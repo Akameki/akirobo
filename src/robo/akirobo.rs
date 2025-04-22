@@ -1,10 +1,11 @@
 use std::{
     array,
-    collections::{BTreeSet, HashMap},
+    collections::BTreeSet,
     rc::Rc,
     time::Instant,
 };
 
+use ahash::AHashMap;
 use owo_colors::OwoColorize;
 
 use crate::{
@@ -15,11 +16,11 @@ use crate::{
     tetris_core::{engine::BoardData, snapshot::GameSnapshot},
 };
 
-const LOOKAHEAD_DEPTH: usize = 6; // # pieces in queue being considered (0 = only current, disables rest)
-const DEPTH_ZERO_SIZE: usize = 30; // maybe small number kinda makes bot play safer?
+const LOOKAHEAD_DEPTH: usize = 12; // # pieces in queue being considered (0 = only current, disables rest)
+const DEPTH_ZERO_SIZE: usize = usize::MAX; // maybe small number kinda makes bot play safer?
 
-const BRANCHING_FACTOR: usize = 0; // if nonzero, use a large search width
-const MAX_SEARCH_WIDTH: usize = 500;
+const BRANCHING_FACTOR: usize = 15; // if nonzero, use a large search width
+const MAX_SEARCH_WIDTH: usize = usize::MAX;
 
 // expect ~ pow(BRANCHING_FACTOR, LOOKAHEAD) leaves at final depth, or MAX_SEARCH_WIDTH.
 
@@ -48,7 +49,7 @@ impl Akirobo {
         let mut tree_nodes: [BTreeSet<Rc<EvaledPlacementNode>>; LOOKAHEAD_DEPTH + 1] =
             array::from_fn(|_| BTreeSet::new());
 
-        let mut action_lookup = HashMap::new();
+        let mut action_lookup = AHashMap::new();
         for (placement, action) in move_gen_with_action(&genesis_board, first_piece) {
             tree_nodes[0].insert(EvaledPlacementNode::new(
                 &genesis_board,
@@ -117,7 +118,7 @@ impl Akirobo {
 
         if last_depth_frames == 0 {
             genesis_board.print_board(None);
-            println!("We are doomed :)");
+            println!("Doom imminent? :)");
             for level in tree_nodes.iter_mut().rev() {
                 if !level.is_empty() {
                     return action_lookup

@@ -115,7 +115,7 @@ where
         BitBoard::print_rows(
             &chunk
                 .iter()
-                .map(|node| (&node.board_after_clears, Some(node.placement.piece_location)))
+                .map(|node| (&node.board, Some(node.placement.piece_location)))
                 .collect::<Vec<_>>(),
             chunk_size,
         );

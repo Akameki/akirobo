@@ -7,7 +7,7 @@ use crate::botris::{self, types::Command};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct BitBoard {
-    cols: [u32; 10],
+    pub cols: [u32; 10],
 }
 pub const BITBOARD_HEIGHT: usize = 32;
 
@@ -33,20 +33,12 @@ impl BitBoard {
         }
         board
     }
-    pub fn from_thin_strs(strs: &[&str]) -> BitBoard {
-        debug_assert_eq!(strs[0].len(), 10);
-        let mut board = EMPTY_BOARD;
-        for (y, row) in strs.iter().rev().enumerate() {
-            for (x, cell) in row.chars().enumerate() {
-                board.set(y, x, cell != ' ');
-            }
-        }
-        board
-    }
 
+    #[inline]
     pub fn at(&self, row: usize, col: usize) -> bool {
         self.cols[col] & (1 << row) != 0
     }
+    #[inline]
     pub fn set(&mut self, row: usize, col: usize, val: bool) {
         if val {
             self.cols[col] |= 1 << row;
@@ -54,14 +46,23 @@ impl BitBoard {
             self.cols[col] &= !(1 << row);
         }
     }
+    #[inline]
     pub fn column_height(&self, col: usize) -> usize {
         BITBOARD_HEIGHT - self.cols[col].leading_zeros() as usize
     }
+    #[inline]
     pub fn stack_height(&self) -> usize {
-        BITBOARD_HEIGHT - self.cols.iter().map(|&col| col.leading_zeros()).min().unwrap() as usize
+        let contains_stack = self.cols.iter().fold(0, |acc, &col| acc | col);
+        // dbg!(contains_stack);
+        // dbg!(self.cols);
+        assert_eq!(
+            contains_stack.trailing_ones() + contains_stack.leading_zeros(),
+            BITBOARD_HEIGHT as u32
+        );
+        BITBOARD_HEIGHT - contains_stack.leading_zeros() as usize
     }
     pub fn collides(&self, tentative_piece: &FallingPiece) -> bool {
-        tentative_piece.absolute().iter().any(|&(y, x)| {
+        tentative_piece.coords.iter().any(|&(y, x)| {
             x < 0
                 || y < 0
                 || x >= 10
@@ -118,31 +119,41 @@ impl BitBoard {
         use Command::*;
         let mut tentative_piece = *falling_piece;
         match command {
-            MoveLeft => tentative_piece.x -= 1,
-            MoveRight => tentative_piece.x += 1,
-            Drop => tentative_piece.y -= 1,
+            MoveLeft => tentative_piece.shift(0, -1),
+            MoveRight => tentative_piece.shift(0, 1),
+            Drop => tentative_piece.shift(-1, 0),
             SonicDrop => {
-                while !self.collides(&tentative_piece) {
-                    tentative_piece.y -= 1;
+                let distance = tentative_piece
+                    .coords
+                    .iter()
+                    .map(|&(y, x)| {
+                        if y == 0 {
+                            0
+                        } else {
+                            (!self.cols[x as usize] << (BITBOARD_HEIGHT - y as usize))
+                                .leading_ones() as i8
+                        }
+                    })
+                    .min()
+                    .unwrap();
+                debug_assert!(distance >= 0);
+                if distance == 0 {
+                    return None;
+                } else {
+                    tentative_piece.shift(-distance, 0)
                 }
-                tentative_piece.y += 1;
             }
             RotateCw | RotateCcw => {
-                tentative_piece.rotation += if command == RotateCw { 1 } else { 3 };
-                tentative_piece.rotation %= 4;
+                tentative_piece.rotate(command);
 
                 // go through kicks in kicktable
                 for [x_kick, y_kick] in
-                    tentative_piece.piece.kicks(command)[tentative_piece.rotation]
+                    tentative_piece.piece.kicks(command)[tentative_piece.rotation as usize]
                 {
-                    let rotated = FallingPiece {
-                        x: tentative_piece.x + x_kick,
-                        y: tentative_piece.y + y_kick,
-                        rotation: tentative_piece.rotation,
-                        piece: tentative_piece.piece,
-                    };
-                    if !self.collides(&rotated) {
-                        return Some(rotated);
+                    let mut kicked_piece = tentative_piece;
+                    kicked_piece.shift(y_kick, x_kick);
+                    if !self.collides(&kicked_piece) {
+                        return Some(kicked_piece);
                     }
                 }
                 return None;
@@ -167,12 +178,7 @@ impl BitBoard {
     }
 
     pub fn force_sonic_drop(&self, falling_piece: &FallingPiece) -> FallingPiece {
-        let mut tentative_piece = *falling_piece;
-        while !self.collides(&tentative_piece) {
-            tentative_piece.y -= 1;
-        }
-        tentative_piece.y += 1;
-        tentative_piece
+        self.try_command(falling_piece, Command::SonicDrop).unwrap_or(*falling_piece)
     }
 
     /* lock */
@@ -181,33 +187,41 @@ impl BitBoard {
         let mut new_board = *self;
         let mut new_data = data;
 
-        // clear lines
         let mut cleared_lines = 0;
-        for row in data.simulated_garbage as usize..self.stack_height() {
-            if new_board.cols.iter().all(|&col| col & (1 << row) != 0) {
-                cleared_lines += 1;
-                for col in &mut new_board.cols {
-                    let below_clear_mask = (1 << row) - 1;
-                    let above_clear_mask = !((below_clear_mask << 1) + 1);
-                    let below_clear = *col & below_clear_mask;
-                    *col = (*col & above_clear_mask) >> 1 | below_clear;
-                }
+        let mut rows_to_clear = new_board.cols.iter().fold(u32::MAX, |acc, &col| acc & col);
+        rows_to_clear &= u32::MAX << data.simulated_garbage;
+
+        while rows_to_clear != 0 {
+            let row = rows_to_clear.trailing_zeros();
+            rows_to_clear &= rows_to_clear - 1; // clear lsb
+            cleared_lines += 1;
+            for col in &mut new_board.cols {
+                let mask_below_row = (1 << row) - 1;
+                let mask_above_row = !((mask_below_row << 1) + 1);
+                let below_row = *col & mask_below_row;
+                *col = (*col & mask_above_row) >> 1 | below_row;
             }
+            rows_to_clear >>= 1;
         }
 
         if cleared_lines > 0 {
             new_data.combo += 1;
             new_data.b2b = all_spin || cleared_lines == 4;
+            let mut attack = 0;
             use crate::botris::{game_info::*, types::ClearName::*};
             if all_spin {
-                new_data.cummulative_attack += match cleared_lines {
+                attack += match cleared_lines {
                     1 => ASS.attack(),
                     2 => ASD.attack(),
                     3 => AST.attack(),
-                    _ => panic!(),
+                    _ => {
+                        dbg!(cleared_lines);
+                        self.print_board(None);
+                        panic!();
+                    }
                 };
             } else {
-                new_data.cummulative_attack += match cleared_lines {
+                attack += match cleared_lines {
                     1 => Single.attack(),
                     2 => Double.attack(),
                     3 => Triple.attack(),
@@ -215,12 +229,22 @@ impl BitBoard {
                     _ => panic!(),
                 };
             }
-            new_data.cummulative_attack += COMBO_TABLE[new_data.combo as usize] as u32;
+            attack += COMBO_TABLE[new_data.combo as usize] as u32;
             if new_board.cols.iter().all(|&x| x == 0) {
-                new_data.cummulative_attack += PC.attack();
+                attack += PC.attack();
             }
             if data.b2b && new_data.b2b {
-                new_data.cummulative_attack += B2B_ATTACK;
+                attack += B2B_ATTACK;
+            }
+            new_data.cummulative_attack += attack;
+            for garb in &mut new_data.incoming {
+                if attack <= *garb {
+                    *garb -= attack;
+                    break;
+                } else {
+                    attack -= *garb;
+                    *garb = 0;
+                }
             }
             new_data.incoming[0] += new_data.incoming[1];
         } else {
@@ -253,4 +277,37 @@ pub fn to_board(board: &botris::types::Board) -> BitBoard {
         }
     }
     new_board
+}
+
+#[cfg(test)]
+mod test {
+    use crate::tetris_core::piece::FallingPiece;
+
+    use super::BitBoard;
+
+    #[test]
+    fn test_sonic_drop() {
+        let board = BitBoard::from_strs(&[
+            "[][]            [][]",
+            "[][]        [][][][]",
+        ]);
+        let dropped = board.force_sonic_drop(&FallingPiece::new(crate::botris::types::Piece::Z));
+        board.print_board(Some(dropped.coords));
+    }
+
+    #[test]
+    fn test_hard_drop() {
+        let board = BitBoard::from_strs(&[
+            "[][][][][][]    [][]",
+            "[][][][][][][][][][]",
+            "[][][][][][][][][][]",
+            "[][][][][]  [][][][]",
+            "[][][][][][][][][][]",
+            "[][][][][][][][][][]",
+            "[][][]  [][][][][][]",
+            "[][]    [][][][][][]",
+        ]);
+        let (new_board, _data) = board.hard_drop(false, Default::default());
+        new_board.print_board(None);
+    }
 }

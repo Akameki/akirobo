@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use ahash::{AHashMap, AHashSet};
 
 use crate::{
     botris::types::{Command, Piece},
@@ -16,33 +16,31 @@ pub struct Placement {
 
 impl Placement {
     pub fn new(board: &BitBoard, falling_piece: &FallingPiece) -> Placement {
-        let all_spin = [(0, 1), (1, 0), (-1, 0)].iter().all(|(dx, dy)| {
-            board.collides(&FallingPiece {
-                x: falling_piece.x + dx,
-                y: falling_piece.y + dy,
-                ..*falling_piece
-            })
+        let all_spin = [(0, 1), (1, 0), (-1, 0)].iter().all(|&(dx, dy)| {
+            let mut nudged = *falling_piece;
+            nudged.shift(dy, dx);
+            board.collides(&nudged)
         });
-        Placement { piece_location: falling_piece.absolute(), all_spin }
+        Placement { piece_location: falling_piece.coords, all_spin }
     }
 }
 
-pub fn move_gen_with_action(board: &BitBoard, piece: Piece) -> HashMap<Placement, Vec<Command>> {
+pub fn move_gen_with_action(board: &BitBoard, piece: Piece) -> AHashMap<Placement, Vec<Command>> {
     use Command::*;
     let rotation_sets = [vec![], vec![RotateCw], vec![RotateCcw], vec![RotateCcw, RotateCcw]];
 
     let initial_falling_piece = FallingPiece::new(piece);
     if board.collides(&initial_falling_piece) {
-        return HashMap::new();
+        return AHashMap::new();
     }
 
-    let mut rotated_pieces = HashMap::new();
+    let mut rotated_pieces = AHashMap::new();
     for rotation_set in rotation_sets {
         if let Some(rotated_piece) = board.try_commands(&initial_falling_piece, &rotation_set) {
             rotated_pieces.insert(rotated_piece, rotation_set.clone());
         }
     }
-    let mut moved_and_soniced = HashMap::new();
+    let mut moved_and_soniced = AHashMap::new();
     for (piece, mut action) in rotated_pieces {
         for direction in [MoveLeft, MoveRight] {
             let mut moving_piece = piece;
@@ -59,7 +57,7 @@ pub fn move_gen_with_action(board: &BitBoard, piece: Piece) -> HashMap<Placement
         moved_and_soniced.insert(board.force_sonic_drop(&piece), action);
     }
 
-    let mut generated = HashMap::new();
+    let mut generated = AHashMap::new();
 
     for (piece, action) in &moved_and_soniced {
         generated.insert(Placement::new(board, piece), action.clone());
@@ -78,22 +76,22 @@ pub fn move_gen_with_action(board: &BitBoard, piece: Piece) -> HashMap<Placement
     generated
 }
 
-pub fn move_gen(board: &BitBoard, piece: Piece) -> HashSet<Placement> {
+pub fn move_gen(board: &BitBoard, piece: Piece) -> AHashSet<Placement> {
     use Command::*;
     let rotation_sets = [vec![], vec![RotateCw], vec![RotateCcw], vec![RotateCcw, RotateCcw]];
 
     let initial_falling_piece = FallingPiece::new(piece);
     if board.collides(&initial_falling_piece) {
-        return HashSet::new();
+        return AHashSet::new();
     }
 
-    let mut rotated_pieces = HashSet::new();
+    let mut rotated_pieces = AHashSet::new();
     for rotation_set in rotation_sets {
         if let Some(rotated_piece) = board.try_commands(&initial_falling_piece, &rotation_set) {
             rotated_pieces.insert(rotated_piece);
         }
     }
-    let mut moved_and_soniced = HashSet::new();
+    let mut moved_and_soniced = AHashSet::new();
     for piece in rotated_pieces {
         for direction in [MoveLeft, MoveRight] {
             let mut moving_piece = piece;
@@ -105,7 +103,7 @@ pub fn move_gen(board: &BitBoard, piece: Piece) -> HashSet<Placement> {
         moved_and_soniced.insert(board.force_sonic_drop(&piece));
     }
 
-    let mut generated = HashSet::new();
+    let mut generated = AHashSet::new();
 
     for piece in &moved_and_soniced {
         generated.insert(Placement::new(board, piece));
@@ -128,7 +126,11 @@ mod test {
 
     #[test]
     fn test_move_gen() {
-        let board = BitBoard::from_thin_strs(&["X X XX  X ", "X  XX     "]);
+        let board = BitBoard::from_strs(&[
+            "                    ",
+            "[]  []  [][]    []  ",
+            "[]    []            ",
+        ]);
         let moves = move_gen(&board, Piece::L);
         let moves_with_action = move_gen_with_action(&board, Piece::L);
         BitBoard::print_rows(

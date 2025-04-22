@@ -11,6 +11,11 @@ path = "src/robo/lib.rs"
 name = "botris"
 path = "src/botris/main.rs"
 
+[profile.bench]
+debug = true
+[profile.release]
+debug = true
+
 [[bench]]
 name = "movegen"
 harness = false
@@ -29,6 +34,7 @@ serde_json = "1"
 rand = "0.8.5"
 owo-colors = "4.2.0"
 ordered-float = "5.0.0"
+ahash = "0.8.11"
 
 [dev-dependencies]
 criterion = { version = "0.5.1", features = ["html_reports"] }

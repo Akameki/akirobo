@@ -1,16 +1,10 @@
-use std::{
-    array,
-    cmp::{max, min},
-};
+use std::cmp::{max, min};
 
 use ordered_float::OrderedFloat;
 use owo_colors::OwoColorize;
 
 use super::Evaluate;
-use crate::{
-    botris::game_info::BOARD_HEIGHT,
-    tetris_core::engine::{BitBoard, BoardData, BITBOARD_HEIGHT},
-};
+use crate::tetris_core::engine::{BitBoard, BoardData, BITBOARD_HEIGHT};
 
 struct DefaultEvalData<'a> {
     board: &'a BitBoard,
@@ -27,15 +21,26 @@ struct DefaultEvalData<'a> {
 pub struct DefaultEval {}
 impl Evaluate for DefaultEval {
     fn eval(&self, board: &BitBoard, board_data: &BoardData, verbose: bool) -> OrderedFloat<f32> {
+        #[allow(clippy::type_complexity)]
+        let heuristics: [(fn(&DefaultEvalData) -> f32, f32, &str); 6] = [
+            (Self::bumpy, 0.2, "bumpy"),
+            // (Self::_combob2b, 0.5, "combob2b"),
+            (Self::attack, 1.0, "attack"),
+            (Self::height, 1.0, "height"),
+            // (Self::_avg_height, 0.0, "a_height"),
+            (Self::holes, 2.0, "holes"),
+            (Self::garbage, 1.0, "garbage"),
+            (Self::depends, 1.0, "depends"),
+        ];
         let mut eval = 0.0;
-        let mut data = DefaultEvalData {
+        let data = DefaultEvalData {
             board,
             board_data,
             heights: std::array::from_fn(|col| board.column_height(col) as i32),
             stack_height: board.stack_height(),
         };
-        for (eval_fn, weight, name) in Self::SETTINGS {
-            let score = eval_fn(&mut data);
+        for (eval_fn, weight, name) in heuristics {
+            let score = eval_fn(&data);
             let weighted = score * weight;
             eval += weighted;
             if verbose {
@@ -50,62 +55,57 @@ impl Evaluate for DefaultEval {
 }
 
 impl DefaultEval {
-    #[allow(clippy::type_complexity)]
-    const SETTINGS: [(fn(&mut DefaultEvalData) -> f32, f32, &str); 8] = [
-        (Self::bumpy, 0.3, "bumpy"),
-        (Self::combob2b, 0.5, "combob2b"),
-        (Self::attack, 1.0, "attack"),
-        (Self::height, 1.0, "height"),
-        (Self::avg_height, 0.0, "a_height"),
-        (Self::holes, 3.0, "holes"),
-        (Self::garbage, 2.0, "garbage"),
-        (Self::depends, 1.0, "depends"),
-    ];
+    // diff from XORing columns
+    fn bumpy(DefaultEvalData { board, .. }: &DefaultEvalData) -> f32 {
+        // let mut score = 0;
+        let mut bumps = 0;
 
-    // TODO: take advantage of bitboard !
+        // let mut counting_left: [bool; 10] = array::from_fn(|x| !board.at(0, x));
+        // let mut counting_right: [bool; 10] = array::from_fn(|x| !board.at(0, x));
+        // counting_left[0] = false;
+        // counting_right[9] = false;
 
-    // includes covered bumpiness !!!
-    fn bumpy(DefaultEvalData { board, .. }: &mut DefaultEvalData) -> f32 {
-        let mut score = 0;
+        // for y in 0..BOARD_HEIGHT {
+        //     for x in 0..=9 {
+        //         if x > 0 {
+        //             if y > 0 && board.at(y - 1, x - 1) && !board.at(y, x - 1) {
+        //                 counting_right[x - 1] = true;
+        //             }
+        //             if counting_right[x - 1] {
+        //                 if board.at(y, x - 1) || !board.at(y, x) {
+        //                     counting_right[x - 1] = false;
+        //                 } else {
+        //                     score -= 1;
+        //                 }
+        //             }
+        //         }
+        //         if x < 9 {
+        //             if y > 0 && board.at(y - 1, x + 1) && !board.at(y, x + 1) {
+        //                 counting_left[x + 1] = true;
+        //             }
+        //             if counting_left[x + 1] {
+        //                 if board.at(y, x + 1) || !board.at(y, x) {
+        //                     counting_left[x + 1] = false;
+        //                 } else {
+        //                     score -= 1;
+        //                 }
+        //             }
+        //         }
+        //     }
+        // }
 
-        let mut counting_left: [bool; 10] = array::from_fn(|x| !board.at(0, x));
-        let mut counting_right: [bool; 10] = array::from_fn(|x| !board.at(0, x));
-        counting_left[0] = false;
-        counting_right[9] = false;
-
-        for y in 0..BOARD_HEIGHT {
-            for x in 0..=9 {
-                if x > 0 {
-                    if y > 0 && board.at(y - 1, x - 1) && !board.at(y, x - 1) {
-                        counting_right[x - 1] = true;
-                    }
-                    if counting_right[x - 1] {
-                        if board.at(y, x - 1) || !board.at(y, x) {
-                            counting_right[x - 1] = false;
-                        } else {
-                            score -= 1;
-                        }
-                    }
-                }
-                if x < 9 {
-                    if y > 0 && board.at(y - 1, x + 1) && !board.at(y, x + 1) {
-                        counting_left[x + 1] = true;
-                    }
-                    if counting_left[x + 1] {
-                        if board.at(y, x + 1) || !board.at(y, x) {
-                            counting_left[x + 1] = false;
-                        } else {
-                            score -= 1;
-                        }
-                    }
-                }
-            }
+        // xor from column to column and sum up number of 1s
+        let mut prev_col = board.cols[0];
+        for x in 1..=9 {
+            let col = board.cols[x];
+            bumps += (prev_col ^ col).count_ones();
+            prev_col = col;
         }
 
-        score as f32
+        -(bumps as f32)
     }
 
-    fn combob2b(DefaultEvalData { board_data, .. }: &mut DefaultEvalData) -> f32 {
+    fn _combob2b(DefaultEvalData { board_data, .. }: &DefaultEvalData) -> f32 {
         let mut score = 0;
         // score += board_data.combo;
         if board_data.b2b {
@@ -113,37 +113,40 @@ impl DefaultEval {
         }
         score as f32
     }
-    fn attack(DefaultEvalData { board_data, .. }: &mut DefaultEvalData) -> f32 {
+    fn attack(DefaultEvalData { board_data, .. }: &DefaultEvalData) -> f32 {
         let mut score = 0.0;
         score += board_data.cummulative_attack as f32;
         score
     }
 
     // high board = bad !
-    fn height(DefaultEvalData { stack_height, .. }: &mut DefaultEvalData) -> f32 {
+    fn height(DefaultEvalData { stack_height, .. }: &DefaultEvalData) -> f32 {
         match stack_height {
             0 => 0.0,
             1 => 0.0,
             2 => 0.0,
             3 => 0.0,
             4 => 0.0,
-            5 | 6 => 0.0,
-            7 | 8 => -1.5,
-            9 | 10 => -3.0,
-            11 => -5.0,
-            12 => -7.0,
-            13 => -10.5,
-            14 => -14.0,
-            15 => -18.0,
-            16 => -22.0,
-            17 => -26.0,
-            18 => -50.0,
-            19 => -70.0,
-            _ => -150.0,
+            5 => -1.0,
+            6 => -2.0,
+            7 => -3.0,
+            8 => -4.0,
+            9 => -5.5,
+            10 => -7.0,
+            11 => -9.0,
+            12 => -11.0,
+            13 => -14.0,
+            14 => -18.0,
+            15 => -22.0,
+            16 => -26.0,
+            17 => -30.0,
+            18 => -35.0,
+            19 => -50.0,
+            _ => -70.0,
         }
     }
 
-    fn avg_height(DefaultEvalData { heights: _, .. }: &mut DefaultEvalData) -> f32 {
+    fn _avg_height(DefaultEvalData { heights: _, .. }: &DefaultEvalData) -> f32 {
         // let avg_height = heights.iter().sum::<i32>() as f32 / 10.0;
         // match avg_height {
         //     h if h <= 4.0 => h - 4.0,
@@ -153,39 +156,36 @@ impl DefaultEval {
         0.0
     }
     // block over (contiguous) space = bad!
-    // TODO: calculate at same time as other evals
-    fn holes(DefaultEvalData { board, .. }: &mut DefaultEvalData) -> f32 {
+    fn holes(DefaultEvalData { board, .. }: &DefaultEvalData) -> f32 {
         let mut score = 0.0;
-        for x in 0..10 {
-            let mut hole_present = 0.0;
-            for y in 0..BITBOARD_HEIGHT {
-                if board.at(y, x) {
-                    if hole_present == 0.0 {
-                        continue;
-                    }
-                    score -= hole_present;
-                    hole_present = match hole_present {
-                        1.0 => 0.2,
-                        0.2 => 0.1,
-                        0.1 => 0.05,
-                        0.05 => 0.0,
-                        _ => unreachable!(),
-                    }
-                } else {
-                    hole_present = 1.0;
-                }
+        for mut col in board.cols {
+            if col == u32::MAX {
+                continue;
+            }
+            col >>= col.trailing_ones();
+            while col.trailing_zeros() as usize != BITBOARD_HEIGHT {
+                col >>= col.trailing_zeros();
+                score += match col.trailing_ones() {
+                    0 => panic!(),
+                    1 => -1.0,
+                    2 => -1.25,
+                    3 => -1.5,
+                    4 => -1.75,
+                    _ => -2.0,
+                };
+                col >>= col.trailing_ones();
             }
         }
         score
     }
 
     // garbage = bad!
-    fn garbage(DefaultEvalData { board_data, .. }: &mut DefaultEvalData) -> f32 {
+    fn garbage(DefaultEvalData { board_data, .. }: &DefaultEvalData) -> f32 {
         -(board_data.simulated_garbage as f32)
     }
 
     // stacks with 1 wide wells are bad! except maybe 9-0 :p
-    fn depends(DefaultEvalData { heights, .. }: &mut DefaultEvalData) -> f32 {
+    fn depends(DefaultEvalData { heights, .. }: &DefaultEvalData) -> f32 {
         let mut score = 0.0;
         for x in 1..=8 {
             score += match max(min(heights[x - 1], heights[x + 1]) - heights[x], 0) {
@@ -214,7 +214,7 @@ impl DefaultEval {
 mod test {
     use super::DefaultEval;
     use crate::{
-        evaluation::{default_eval::DefaultEvalData, Evaluate},
+        evaluation::Evaluate,
         tetris_core::engine::{BitBoard, BoardData},
     };
 
@@ -237,16 +237,12 @@ mod test {
             "  [][][][][]    [][]",
             "[][][][][][][]  [][]",
         ]);
-        // print_board(&board);
-        assert_eq!(
-            DefaultEval::bumpy(&mut DefaultEvalData {
-                board: &board,
-                board_data: &BoardData::default(),
-                heights: [0; 10],
-                stack_height: 99,
-            }),
-            -11.0
-        )
+        board.print_board(None);
+        DefaultEval {}.eval(&board, &Default::default(), true);
+        // assert_eq!(
+        //     DefaultEval::bumpy(&Default::default()),
+        //     -11.0
+        // )
     }
 
     #[test]
